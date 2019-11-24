@@ -1,6 +1,6 @@
 # adhoc_addiction
 
-1. Create msg struct
+1. Create msg struct - Donee
     - nodeID
     - pathID
     - hopCount
@@ -15,16 +15,16 @@
     - RSSI and minRSSI
 
 New node needs to:
-    - initialize
-    - turn on green LED
+    - initialize - Done
+    - turn on green LED - Done
     - Broadcast info
     - if no response:
         - increment power
 
 ## New Node
-init
+init - Done
 
-green LED on
+green LED on - Done
 
 broadcast
 
@@ -32,8 +32,8 @@ while no response
 - increment power
 
 if single response
-- if RSSI < min_RSSI
-    - ignore
+- if RSSI < min_RSSI - Done
+    - ignore - Done
 - else
     - set responding node as parent and broadcast info to parent
 
@@ -58,7 +58,7 @@ If receive info from parent (control command to turn LEDs yellow) send to childr
 ## Sink Node
 receive info from children
 
-send info through UART to user
+send info through UART to user - Sulley -> in progress.
 
 if receive info through UART for control command
 
