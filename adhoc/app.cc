@@ -170,13 +170,8 @@ fsm root {
 
 // fsm additional_send {
 
-<<<<<<< HEAD
 		
 // }
-=======
-
-}
->>>>>>> origin
 
 fsm receive {
 	address packet;
