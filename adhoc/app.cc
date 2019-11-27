@@ -1,9 +1,11 @@
 #include "sysio.h"
 #include "serf.h"
+#include "ser.h"
 
 #include "phys_cc1100.h"
 #include "plug_null.h"
 #include "tcvphys.h"
+#include "tcv.h"
 
 #define CC1100_BUF_SZ   60
 #define Min_RSSI        800
@@ -15,6 +17,7 @@ byte RSSI_C;
 byte LQI_C;
 byte hopCount;
 byte child_array[Max_Degree];
+word power = 0x0000;
 int sfd;
  
 
@@ -49,57 +52,62 @@ fsm root {
 	address packet;
 	word p1, tr;
 	byte RSSI, LQI;
+	word ReadPower;
 	int count = 0;
 	char c;
 
 	/* initializes the root */
 	state Init:
-		phys_cc1100(0, CC1100_BUF_SIZE); 
+		phys_cc1100(0, CC1100_BUF_SZ); 
 		tcv_plug(0, &plug_null);
 		sfd = tcv_open(NONE, 0, 0);
 		if (sfd < 0) {
 			diag("unable to open TCV session.");
 			syserror(EASSERT, "no session");
 		}
-		tcv_control(sfd, PHYSIOT_ON, NULL);
+		tcv_control(sfd, PHYSOPT_ON, NULL);
 		
 
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
-		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-		node_init(ReadPower);			
+		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
+		payload = node_init(ReadPower);
 		leds(1, 1);
 	/* UART interfacing for sink node connections. */
 	state ASK_ser:
-		ser_out(ASK_ser, "Would you like to make this the sink node? (y/n)");
+		ser_outf(ASK_ser, "Would you like to make this the sink node? (y/n)\n\r");
 	state WAIT_ser:
 		ser_inf(WAIT_ser, "%c", &c);
        		/* Sets the sink nodeID to be 0. */
 		if(c == 'y') {
-			payload->nodeID = 0;
+			nodeID = 0;
 		}
+		payload->nodeID = nodeID;
+		ser_outf(ASK_ser, "THIS IS NOW A SINK NODE\n\r");
 
 	state Sending:
-
+		ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
 		//Sets timer
 		time = seconds();
-		packet = tcv_wnp(sending, sfd, 9);
+		packet = tcv_wnp(Sending, sfd, 9);
 		packet[0] = 0;
 
-		char * p (char *)(packet+1);
+		
+		char * p = (char *)(packet+1);
 		*p = payload->nodeID;p++;
 		*p = payload->pathID;p++;
 		*p = payload->hopCount;p++;
-		*p = payload->powerLVL;p++;p++;
+		*p = payload->powerLVL;p++;
 
-		tcv_endp_(packet);
+		tcv_endp(packet);
 		ufree(payload);
 
 	state Receive_Connection:
-
+		leds(2,1);
+		mdelay(1000);
 		//RSSI is check by potential parents
-		packet = tcv_rnp(Receiving_Connection, sfd);
+		packet = tcv_rnp(Receive_Connection, sfd);
 		
 		//Checks timer
 		if((seconds()-time) > 90){
@@ -123,7 +131,7 @@ fsm root {
 		count ++;
 		if(count > 1){
 			leds_all(0);
-			led(3, 1);
+			leds(3, 1);
 			// If distance is short look for another
 			// connection
 			if((payload->hopCount + 1) > hopCount){
@@ -156,10 +164,10 @@ fsm root {
 
 }
 
-fsm additional_send {
+// fsm additional_send {
 
 		
-}
+// }
 
 fsm receive {
 	address packet;
@@ -180,7 +188,8 @@ fsm receive {
 		struct msg* payload = (struct msg*)(packet+1);
 		
 		/*checks to see if the message is coming from a known node. */
-		for (int i = 0; i < (sizeof(child_array)/sizeof(byte)); i++) {
+		int i;
+		for (i = 0; i < (sizeof(child_array)/sizeof(byte)); i++) {
 			if(payload->nodeID == child_array[i]) {
 			       	check = 1;
 			}	
