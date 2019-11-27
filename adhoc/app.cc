@@ -45,7 +45,7 @@ struct msg * node_init(word ReadPower) {
 fsm root {
 
 	struct msg * payload;
-	lword time;
+	lword t;
 	address packet;
 	word p1, tr;
 	byte RSSI, LQI;
@@ -83,7 +83,7 @@ fsm root {
 	state Sending:
 
 		//Sets timer
-		time = seconds();
+		t = seconds();
 		packet = tcv_wnp(sending, sfd, 9);
 		packet[0] = 0;
 
@@ -91,20 +91,20 @@ fsm root {
 		*p = payload->nodeID;p++;
 		*p = payload->pathID;p++;
 		*p = payload->hopCount;p++;
-		*p = payload->powerLVL;p++;p++;
+		*p = payload->powerLVL;p++;
 
 		tcv_endp_(packet);
 		ufree(payload);
 
 	state Receive_Connection:
 
+		if((seconds()-t) > 90){
+                        proceed Power_Up;
+                }
+
 		//RSSI is check by potential parents
 		packet = tcv_rnp(Receiving_Connection, sfd);
 		
-		//Checks timer
-		if((seconds()-time) > 90){
-			proceed Power_Up; 
-		}
 
 	state Measuring:
 
@@ -141,13 +141,13 @@ fsm root {
 
 	//increments power until max and if max sends to shutdown.
 	state Power_Up:
-		word power;
-		tcv_control (sfd, PHYSOPT_GETPOWER,(&power));
+		word cur_power;
+		tcv_control (sfd, PHYSOPT_GETPOWER,(&cur_power));
 		if(power == 7){
 			proceed Shut_Down;
 		}
 
-		tcv_control (sfd, PHYSOPT_SETPOWER,(&power + 1));
+		tcv_control (sfd, PHYSOPT_SETPOWER,(&cur_power + 1));
 		proceed Sending;	
 
 	state Shut_Down:
