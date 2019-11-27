@@ -60,35 +60,22 @@ fsm root {
 
 	/* initializes the root */
 	state Init:
-<<<<<<< HEAD
+
 		phys_cc1100(0, CC1100_BUF_SZ); 
-=======
-		phys_cc1100(0, CC1100_BUF_SIZE);
->>>>>>> origin
 		tcv_plug(0, &plug_null);
 		sfd = tcv_open(NONE, 0, 0);
 		if (sfd < 0) {
 			diag("unable to open TCV session.");
 			syserror(EASSERT, "no session");
 		}
-<<<<<<< HEAD
 		tcv_control(sfd, PHYSOPT_ON, NULL);
 		
-=======
-		tcv_control(sfd, PHYSIOT_ON, NULL);
-
->>>>>>> origin
 
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
-<<<<<<< HEAD
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
 		payload = node_init(ReadPower);
-=======
-		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-		node_init(ReadPower);
->>>>>>> origin
 		leds(1, 1);
 	/* UART interfacing for sink node connections. */
 	state ASK_ser:
@@ -105,13 +92,8 @@ fsm root {
 	state Sending:
 		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
 		//Sets timer
-<<<<<<< HEAD
 		time = seconds();
 		packet = tcv_wnp(Sending, sfd, 10);
-=======
-		t = seconds();
-		packet = tcv_wnp(sending, sfd, 9);
->>>>>>> origin
 		packet[0] = 0;
 
 		
@@ -126,7 +108,6 @@ fsm root {
 		ufree(payload);
 
 	state Receive_Connection:
-<<<<<<< HEAD
 		//leds(2,1);
 		mdelay(1000);
 		//RSSI is check by potential parents
@@ -136,16 +117,6 @@ fsm root {
 		if((seconds()-time) > 90){
 			proceed Power_Up; 
 		}
-=======
-
-		if((seconds()-t) > 90){
-                        proceed Power_Up;
-                }
-
-		//RSSI is check by potential parents
-		packet = tcv_rnp(Receiving_Connection, sfd);
-
->>>>>>> origin
 
 	state Measuring:
 
