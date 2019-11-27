@@ -19,12 +19,13 @@ byte hopCount;
 byte child_array[Max_Degree];
 word power = 0x0000;
 int sfd;
- 
+
 
 
 struct msg {
 	byte nodeID;
 	byte pathID;
+	byte connect;
 	byte hopCount;
 	word powerLVL;
 };
@@ -33,22 +34,23 @@ struct msg {
 
 /*Creates a node and assigns it correct struct values */
 struct msg * node_init(word ReadPower) {
-	
+
 	struct msg * node;
 	node = (struct msg *)umalloc(sizeof(struct msg));
 
 	node->nodeID = nodeID;
 	node->pathID = 2;
+	node->connect = 1;
 	node->hopCount = 0;
-	node->powerLVL = (byte) ReadPower; 
-	
+	node->powerLVL = (byte) ReadPower;
+
 	return node;
 }
 
 fsm root {
 
 	struct msg * payload;
-	lword time;
+	lword t;
 	address packet;
 	word p1, tr;
 	byte RSSI, LQI;
@@ -58,21 +60,35 @@ fsm root {
 
 	/* initializes the root */
 	state Init:
+<<<<<<< HEAD
 		phys_cc1100(0, CC1100_BUF_SZ); 
+=======
+		phys_cc1100(0, CC1100_BUF_SIZE);
+>>>>>>> origin
 		tcv_plug(0, &plug_null);
 		sfd = tcv_open(NONE, 0, 0);
 		if (sfd < 0) {
 			diag("unable to open TCV session.");
 			syserror(EASSERT, "no session");
 		}
+<<<<<<< HEAD
 		tcv_control(sfd, PHYSOPT_ON, NULL);
 		
+=======
+		tcv_control(sfd, PHYSIOT_ON, NULL);
+
+>>>>>>> origin
 
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
+<<<<<<< HEAD
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
 		payload = node_init(ReadPower);
+=======
+		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
+		node_init(ReadPower);
+>>>>>>> origin
 		leds(1, 1);
 	/* UART interfacing for sink node connections. */
 	state ASK_ser:
@@ -89,14 +105,20 @@ fsm root {
 	state Sending:
 		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
 		//Sets timer
+<<<<<<< HEAD
 		time = seconds();
 		packet = tcv_wnp(Sending, sfd, 10);
+=======
+		t = seconds();
+		packet = tcv_wnp(sending, sfd, 9);
+>>>>>>> origin
 		packet[0] = 0;
 
 		
 		char * p = (char *)(packet+1);
 		*p = payload->nodeID;p++;
 		*p = payload->pathID;p++;
+		*p = payload->connect;p++;
 		*p = payload->hopCount;p++;
 		*p = payload->powerLVL;p++;
 
@@ -104,6 +126,7 @@ fsm root {
 		ufree(payload);
 
 	state Receive_Connection:
+<<<<<<< HEAD
 		//leds(2,1);
 		mdelay(1000);
 		//RSSI is check by potential parents
@@ -113,6 +136,16 @@ fsm root {
 		if((seconds()-time) > 90){
 			proceed Power_Up; 
 		}
+=======
+
+		if((seconds()-t) > 90){
+                        proceed Power_Up;
+                }
+
+		//RSSI is check by potential parents
+		packet = tcv_rnp(Receiving_Connection, sfd);
+
+>>>>>>> origin
 
 	state Measuring:
 
@@ -122,11 +155,11 @@ fsm root {
 		LQI = (byte) tr;
 
 	state Update:
-		//Parent is set to the node id of the message 
+		//Parent is set to the node id of the message
 		//So the node id will always be id of the node who
 		//sent the message
 		struct msg* payload = (struct msg*)(packet + 1);
-		
+
 		//checks for multiple connections
 		count ++;
 		if(count > 1){
@@ -149,14 +182,14 @@ fsm root {
 
 	//increments power until max and if max sends to shutdown.
 	state Power_Up:
-		word power;
-		tcv_control (sfd, PHYSOPT_GETPOWER,(&power));
+		word cur_power;
+		tcv_control (sfd, PHYSOPT_GETPOWER,(&cur_power));
 		if(power == 7){
 			proceed Shut_Down;
 		}
 
-		tcv_control (sfd, PHYSOPT_SETPOWER,(&power + 1));
-		proceed Sending;	
+		tcv_control (sfd, PHYSOPT_SETPOWER,(&cur_power + 1));
+		proceed Sending;
 
 	state Shut_Down:
 		leds_all(0);
@@ -166,14 +199,19 @@ fsm root {
 
 // fsm additional_send {
 
+<<<<<<< HEAD
 		
 // }
+=======
+
+}
+>>>>>>> origin
 
 fsm receive {
 	address packet;
 	int check;
 	word p1, tr;
-	byte RSSI, LQI;	
+	byte RSSI, LQI;
 	state Receiving:
 		packet = tcv_rnp(Receiving,sfd);
 
@@ -186,16 +224,17 @@ fsm receive {
 
 	state OK:
 		struct msg* payload = (struct msg*)(packet+1);
-		
+
 		/*checks to see if the message is coming from a known node. */
 		int i;
 		for (i = 0; i < (sizeof(child_array)/sizeof(byte)); i++) {
 			if(payload->nodeID == child_array[i]) {
 			       	check = 1;
-			}	
-		}	
+			}
+		}
 		/* If the message comes from a parent node. */
 		if(payload->nodeID == pathID) {
+			led(2, 1);
 
 		}
 
@@ -206,15 +245,16 @@ fsm receive {
 		/* If the message comes from a new connection */
 		else {
 			if (RSSI < Min_RSSI || ((sizeof(child_array)/sizeof(byte)) == Max_Degree)) {
-				proceed Receiving;		
+				proceed Receiving;
 			}
 			else {
 				/* add child to the node tree updating child_array */
+				for (int i = 0; i < ((sizeof(child_array)/sizeof(byte)); i++) {
+					if (child_array[i] == NULL) {
+						child_array[i] = payload->nodeID;
+						break;
+					}
+				}
 			}
 		}
 }
-
-
-
-
-
