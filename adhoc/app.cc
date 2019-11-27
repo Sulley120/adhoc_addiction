@@ -91,7 +91,7 @@ fsm root {
 		*p = payload->nodeID;p++;
 		*p = payload->pathID;p++;
 		*p = payload->hopCount;p++;
-		*p = payload->powerLVL;p++;
+		*p = payload->powerLVL;p++;p++;
 
 		tcv_endp_(packet);
 		ufree(payload);
