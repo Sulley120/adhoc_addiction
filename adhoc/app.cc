@@ -24,19 +24,19 @@ struct msg {
 	byte pathID;
 	byte hopCount;
 	word powerLVL;
-}
+};
 
 
 
 /*Creates a node and assigns it correct struct values */
-msg node_init(word ReadPower) {
+struct msg * node_init(word ReadPower) {
 	
 	struct msg * node;
 	node = (struct msg *)umalloc(sizeof(struct msg));
 
 	node->nodeID = nodeID;
 	node->pathID = 2;
-	node->hopcount = 0;
+	node->hopCount = 0;
 	node->powerLVL = (byte) ReadPower; 
 	
 	return node;
@@ -54,7 +54,7 @@ fsm root {
 
 	/* initializes the root */
 	state Init:
-		phys_cc1100(0, CC1100_BUF_SIZE);
+		phys_cc1100(0, CC1100_BUF_SIZE); 
 		tcv_plug(0, &plug_null);
 		sfd = tcv_open(NONE, 0, 0);
 		if (sfd < 0) {
@@ -103,7 +103,7 @@ fsm root {
 		
 		//Checks timer
 		if((seconds()-time) > 90){
-			proceed Power_UP; 
+			proceed Power_Up; 
 		}
 
 	state Measuring:
@@ -127,7 +127,7 @@ fsm root {
 			// If distance is short look for another
 			// connection
 			if((payload->hopCount + 1) > hopCount){
-				proceed Receive_Connection:
+				proceed Receive_Connection;
 			}
 		}
 		//updates if better connection
@@ -183,7 +183,8 @@ fsm receive {
 		for (int i = 0; i < (sizeof(child_array)/sizeof(byte)); i++) {
 			if(payload->nodeID == child_array[i]) {
 			       	check = 1;
-				}		
+			}	
+		}	
 		/* If the message comes from a parent node. */
 		if(payload->nodeID == pathID) {
 
@@ -200,6 +201,7 @@ fsm receive {
 			}
 			else {
 				/* add child to the node tree updating child_array */
+			}
 		}
 }
 
