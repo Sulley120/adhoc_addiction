@@ -11,7 +11,7 @@
 #define Min_RSSI        800
 #define Max_Degree      8
 
-byte nodeID = 1;
+byte nodeID = -1;
 byte pathID;
 byte RSSI_C;
 byte LQI_C;
@@ -84,13 +84,13 @@ fsm root {
 			nodeID = 0;
 		}
 		payload->nodeID = nodeID;
-		ser_outf(ASK_ser, "THIS IS NOW A SINK NODE\n\r");
+		//ser_outf(ASK_ser, "THIS IS NOW A SINK NODE\n\r");
 
 	state Sending:
-		ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
+		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
 		//Sets timer
 		time = seconds();
-		packet = tcv_wnp(Sending, sfd, 9);
+		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
 
 		
@@ -104,7 +104,7 @@ fsm root {
 		ufree(payload);
 
 	state Receive_Connection:
-		leds(2,1);
+		//leds(2,1);
 		mdelay(1000);
 		//RSSI is check by potential parents
 		packet = tcv_rnp(Receive_Connection, sfd);
