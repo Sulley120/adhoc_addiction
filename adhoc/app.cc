@@ -13,6 +13,7 @@
 
 byte nodeID = -1;
 byte pathID;
+byte destID;
 byte RSSI_C;
 byte LQI_C;
 byte hopCount;
@@ -61,7 +62,7 @@ fsm root {
 	/* initializes the root */
 	state Init:
 
-		phys_cc1100(0, CC1100_BUF_SZ); 
+		phys_cc1100(0, CC1100_BUF_SZ);
 		tcv_plug(0, &plug_null);
 		sfd = tcv_open(NONE, 0, 0);
 		if (sfd < 0) {
@@ -69,12 +70,12 @@ fsm root {
 			syserror(EASSERT, "no session");
 		}
 		tcv_control(sfd, PHYSOPT_ON, NULL);
-		
+
 
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
-		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
+		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
 		payload = node_init(ReadPower);
 		leds(1, 1);
 	/* UART interfacing for sink node connections. */
@@ -96,7 +97,7 @@ fsm root {
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
 
-		
+
 		char * p = (char *)(packet+1);
 		*p = payload->nodeID;p++;
 		*p = payload->pathID;p++;
@@ -112,10 +113,10 @@ fsm root {
 		mdelay(1000);
 		//RSSI is check by potential parents
 		packet = tcv_rnp(Receive_Connection, sfd);
-		
+
 		//Checks timer
 		if((seconds()-time) > 90){
-			proceed Power_Up; 
+			proceed Power_Up;
 		}
 
 	state Measuring:
@@ -168,10 +169,48 @@ fsm root {
 
 }
 
-// fsm additional_send {
+/* Parent send is the fsm for nodes to send information to their parents
+ * if they receive information from their children. */
+fsm parent_send {
+	struct msg * payload;
+	address packet;
+	word ReadPower;
 
-		
-// }
+	state Init:
+		phys_cc1100(0, CC1100_BUF_SZ);
+		tcv_plug(0, &plug_null);
+		sfd = tcv_open(NONE, 0, 0);
+		if (sfd < 0) {
+			diag("unable to open TCV session.");
+			syserror(EASSERT, "no session");
+		}
+		tcv_control(sfd, PHYSOPT_ON, NULL);
+
+	/* Initializes the msg packet */
+	state Init_t:
+		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
+		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
+		payload = node_init(ReadPower);
+		leds(1, 1);
+
+	state Sending:
+		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
+		packet = tcv_wnp(Sending, sfd, 10);
+		packet[0] = 0;
+		payload->nodeID = pathID; // Set node to send to its parent's ID
+
+		// Fill packet:
+		char * p = (char *)(packet+1);
+		*p = payload->nodeID;p++;
+		*p = payload->destID;p++;
+		*p = payload->connect;p++;
+		*p = payload->hopCount;p++;
+		*p = payload->powerLVL;p++;
+
+		tcv_endp(packet);
+		ufree(payload);
+		delay(2000, Init_t); //In two seconds, DO IT AGAIN
+}
 
 fsm receive {
 	address packet;
