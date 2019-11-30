@@ -26,20 +26,20 @@ struct msg {
 	byte destID;
 	byte connect;
 	byte hopCount;
-	word powerLVL;
+	byte powerLVL;
 };
 
 /*Creates a node and assigns it correct struct values */
-struct msg * node_init(word ReadPower) {
+struct msg * node_init(byte ReadPower, byte destID) {
 
 	struct msg * node;
 	node = (struct msg *)umalloc(sizeof(struct msg));
 
 	node->nodeID = nodeID;
-	node->destID = 2;
+	node->destID = destID;
 	node->connect = 1;
 	node->hopCount = 0;
-	node->powerLVL = (byte) ReadPower;
+	node->powerLVL = ReadPower;
 
 	return node;
 }
@@ -50,7 +50,7 @@ fsm root {
 	address packet;
 	word p1, tr;
 	byte RSSI, LQI;
-	word ReadPower;
+	byte ReadPower;
 	int count = 0;
 	char c;
 
@@ -70,7 +70,8 @@ fsm root {
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-		payload = node_init(ReadPower);
+
+		payload = node_init(ReadPower, -1);
 		leds(1, 1);
 	/* UART interfacing for sink node connections. */
 	state ASK_ser:
@@ -80,6 +81,8 @@ fsm root {
        		/* Sets the sink nodeID to be 0. */
 		if(c == 'y') {
 			nodeID = 0;
+			pathID = 0;
+			hopCount = 0;
 		}
 		payload->nodeID = nodeID;
 		//ser_outf(ASK_ser, "THIS IS NOW A SINK NODE\n\r");
@@ -87,7 +90,7 @@ fsm root {
 	state Sending:
 		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
 		//Sets timer
-		time = seconds();
+		t = seconds();
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
 
@@ -96,21 +99,25 @@ fsm root {
 		*p = payload->destID;p++;
 		*p = payload->connect;p++;
 		*p = payload->hopCount;p++;
-		*p = payload->powerLVL;p++;
+		*p = payload->powerLVL;
 
 		tcv_endp(packet);
 		ufree(payload);
 
-	state Receive_Connection:
-		//leds(2,1);
-		mdelay(1000);
+	state Wait_Connection:
+
+		if((seconds()-t) > 90){
+			// If connection end
+			if(count >= 1){
+				runfsm receive;
+				proceed Connected;	
+			}
+			//else power up
+                        proceed Power_Up;
+                }
+
 		//RSSI is check by potential parents
 		packet = tcv_rnp(Receive_Connection, sfd);
-
-		//Checks timer
-		if((seconds()-time) > 90){
-			proceed Power_Up;
-		}
 
 	state Measuring:
 
@@ -130,7 +137,7 @@ fsm root {
 		if(count > 1){
 			leds_all(0);
 			leds(3, 1);
-			// If distance is short look for another
+			// If distance receiveis short look for another
 			// connection
 			if((payload->hopCount + 1) > hopCount){
 				proceed Receive_Connection;
@@ -141,25 +148,53 @@ fsm root {
 		LQI_C = LQI;
 		hopCount = payload->hopCount + 1;
 		pathID = payload->nodeID;
+		nodeID = payload->destID;
 
 		tcv_endp(packet);
-		proceed Receive_Connection;
-
+		proceed Wait_Connection;
+	
 	//increments power until max and if max sends to shutdown.
 	state Power_Up:
-		word cur_power;
-		tcv_control (sfd, PHYSOPT_GETPOWER,(&cur_power));
+		
 		if(power == 7){
 			proceed Shut_Down;
 		}
+		power++;
 
-		tcv_control (sfd, PHYSOPT_SETPOWER,(&cur_power + 1));
+		tcv_control (sfd, PHYSOPT_SETPOWER,(&power);
 		proceed Sending;
 
 	state Shut_Down:
 		leds_all(0);
 		finish;
+	
+	//generates final connection message
+	state Prep_Message:
+		
+		payload = (struct msg *)umalloc(sizeof(struct msg));
+		payload->nodeID = nodeID;
+       		payload->destID = destID;
+		payload->connect = 1;
+		payload->hopCount = hopCount;
+		payload->powerLVL = (byte) ReadPower;	
+
+	// Informs parent that it now has a child
+	state Connected:
+		
+		packet = tcv_wnp(sending, sfd, 10);
+
+		char * p = (char *)(packet+1);
+		*p = payload->nodeID;p++;
+		*p = payload->destID;p++;
+		*p = payload->connect;p++;
+		*p = payload->hopCount;p++;
+		*p = payload->powerLVL;
+		
+
+	state End:
+		delay(10000000, End);
 }
+
 
 /* Parent send is the fsm for nodes to send information to their parents
  * if they receive information from their children. */
@@ -289,13 +324,15 @@ fsm receive {
 
 		}
 		/* If the message comes from a new connection */
-		else {
+		else if(payload->connect == 1) {
 			if (RSSI < Min_RSSI || ((sizeof(child_array)/sizeof(byte)) == Max_Degree)) {
 				proceed Receiving;
 			}
 			else {
 				/* add child to the node tree updating child_array */
-				for (int i = 0; i < ((sizeof(child_array)/sizeof(byte)); i++) {
+				for (int i = 0; i		word cur_power;
+		tcv_control (sfd, PHYSOPT_GETPOWER,(&cur_power));
+ < ((sizeof(child_array)/sizeof(byte)); i++) {
 					if (child_array[i] == NULL) {
 						child_array[i] = payload->nodeID;
 						break;
@@ -303,4 +340,39 @@ fsm receive {
 				}
 			}
 		}
+}
+
+
+fsm info_sender {
+
+	address packet;
+	struct msg * payload;
+
+	state Init_Message:
+
+		payload = (struct msg *)umalloc(sizeof(struct msg));
+		payload->nodeID = nodeID
+		payload->destID = destID
+		payload->connect = connect
+		payload->hopConnect = hopConnect;
+		payload->powerLVL = power;
+
+	state Sending:
+
+		packet = tcv_wnp(Sending, sfd, 10);
+		packet[0] = 0;
+
+		char * p = (char *)(packet+1);
+		*p = payload->nodeID;p++;
+		*p = payload->destID;p++;
+		*p = payload->connect;p++;
+		*p = payload->hopCount;p++;
+		*p = payload->powerLVL = power;
+
+		tcv_endp(packet);
+		ufree(payload);
+
+	state Wait:
+		delay(2000, Init_Message);
+
 }
