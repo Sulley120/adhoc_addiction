@@ -30,15 +30,13 @@ struct msg {
 };
 
 /*Creates a node and assigns it correct struct values */
-struct msg * node_init(byte ReadPower, byte destID) {
-
+struct msg * node_init(byte destID, byte connect, byte hopCount, byte ReadPower) {
 	struct msg * node;
 	node = (struct msg *)umalloc(sizeof(struct msg));
-
 	node->nodeID = nodeID;
-	node->destID = destID;
-	node->connect = 1;
-	node->hopCount = 0;
+	node->pathID = destID;
+	node->connect = connect;
+	node->hopCount = hopCount;
 	node->powerLVL = ReadPower;
 
 	return node;
@@ -69,12 +67,12 @@ fsm root {
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
-		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-
-		payload = node_init(ReadPower, -1);
+		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
+		payload = node_init(-1, 1, 0, ReadPower);
 		leds(1, 1);
 	/* UART interfacing for sink node connections. */
 	state ASK_ser:
+		//ser_outf(ASK_ser, "NODE ID IS %x\n\r", nodeID);
 		ser_outf(ASK_ser, "Would you like to make this the sink node? (y/n)\n\r");
 	state WAIT_ser:
 		ser_inf(WAIT_ser, "%c", &c);
@@ -87,6 +85,8 @@ fsm root {
 		payload->nodeID = nodeID;
 		//ser_outf(ASK_ser, "THIS IS NOW A SINK NODE\n\r");
 
+	// Sends a request to join the tree
+	// TODO: Make this conditional on nodeID != 0
 	state Sending:
 		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
 		//Sets timer
@@ -126,6 +126,7 @@ fsm root {
 		RSSI = (byte) (tr>>8);
 		LQI = (byte) tr;
 
+	// Compare the responding nodes and only save the best one
 	state Update:
 		//Parent is set to the node id of the message
 		//So the node id will always be id of the node who
@@ -164,6 +165,8 @@ fsm root {
 		tcv_control (sfd, PHYSOPT_SETPOWER,(&power);
 		proceed Sending;
 
+	// If no suitable nodes respond, shut down.
+	// TODO: Should red LED go on?
 	state Shut_Down:
 		leds_all(0);
 		finish;
@@ -195,6 +198,27 @@ fsm root {
 		delay(10000000, End);
 }
 
+fsm request_response {
+	srand((unsigned) time(&t));
+	byte newID = (byte) (rand() % 255 + 1);
+	struct msg * payload;
+	payload = node_init(newID, 1, hopCount, powerLVL);
+
+	state Sending:
+		packet = tcv_wnp(Sending, sfd, 10);
+		packet[0] = 0;
+
+		char * p = (char *)(packet+1);
+		*p = payload->nodeID;p++;
+		*p = payload->pathID;p++;
+		*p = payload->connect;p++;
+		*p = payload->hopCount;p++;
+		*p = payload->powerLVL;
+
+		tcv_endp(packet);
+		ufree(payload);
+		finish;
+}
 
 /* Parent send is the fsm for nodes to send information to their parents
  * if they receive information from their children. */
@@ -306,7 +330,7 @@ fsm receive {
 	state OK:
 		struct msg* payload = (struct msg*)(packet+1);
 
-		/*checks to see if the message is coming from a known node. */
+		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < (sizeof(child_array)/sizeof(byte)); i++) {
 			if(payload->nodeID == child_array[i]) {
@@ -315,7 +339,7 @@ fsm receive {
 		}
 		/* If the message comes from a parent node. */
 		if(payload->nodeID == pathID) {
-			led(2, 1);
+			leds(2, 1);
 
 		}
 
@@ -324,20 +348,24 @@ fsm receive {
 
 		}
 		/* If the message comes from a new connection */
-		else if(payload->connect == 1) {
+		else if (payload->connect == 1) {
 			if (RSSI < Min_RSSI || ((sizeof(child_array)/sizeof(byte)) == Max_Degree)) {
 				proceed Receiving;
 			}
-			else {
+			// If the new node's parent is us
+			if (payload->pathID == nodeID) {
 				/* add child to the node tree updating child_array */
-				for (int i = 0; i		word cur_power;
-		tcv_control (sfd, PHYSOPT_GETPOWER,(&cur_power));
- < ((sizeof(child_array)/sizeof(byte)); i++) {
+				int i;
+				for (i = 0; i < ((sizeof(child_array)/sizeof(byte))); i++) {
 					if (child_array[i] == NULL) {
 						child_array[i] = payload->nodeID;
 						break;
 					}
 				}
+			}
+			else {
+				// TODO: If received message has connect == 1 
+				runfsm request_response;
 			}
 		}
 }
