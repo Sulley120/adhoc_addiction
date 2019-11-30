@@ -23,7 +23,7 @@ int sfd;
 
 struct msg {
 	byte nodeID;
-	byte pathID;
+	byte destID;
 	byte connect;
 	byte hopCount;
 	word powerLVL;
@@ -36,7 +36,7 @@ struct msg * node_init(word ReadPower) {
 	node = (struct msg *)umalloc(sizeof(struct msg));
 
 	node->nodeID = nodeID;
-	node->pathID = 2;
+	node->destID = 2;
 	node->connect = 1;
 	node->hopCount = 0;
 	node->powerLVL = (byte) ReadPower;
@@ -93,7 +93,7 @@ fsm root {
 
 		char * p = (char *)(packet+1);
 		*p = payload->nodeID;p++;
-		*p = payload->pathID;p++;
+		*p = payload->destID;p++;
 		*p = payload->connect;p++;
 		*p = payload->hopCount;p++;
 		*p = payload->powerLVL;p++;
@@ -188,7 +188,7 @@ fsm parent_send {
 		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
-		payload->nodeID = pathID; // Set node to send to its parent's ID
+		payload->destID = pathID; // Set node to send to its parent's ID
 
 		// Fill packet:
 		char * p = (char *)(packet+1);
@@ -233,8 +233,8 @@ fsm child_send {
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
 
-		pathID = children[count++];
-		payload->nodeID = pathID; // Set node to send to its changing child ID
+		destID = children[count++];
+		payload->nodeID = destID; // Set node to send to its changing child ID
 
 		// Fill packet:
 		char * p = (char *)(packet+1);
@@ -249,6 +249,7 @@ fsm child_send {
 
 		if (children[count] == NULL) return;
 
+		// Probably don't need two second delay, maybe make it half a second.
 		delay(2000, Init_t); //In two seconds, DO IT AGAIN
 }
 
