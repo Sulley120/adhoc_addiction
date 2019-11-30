@@ -30,7 +30,7 @@ struct msg {
 };
 
 /*Creates a node and assigns it correct struct values */
-struct msg * node_init(word ReadPower, byte destID) {
+struct msg * node_init(byte ReadPower, byte destID) {
 
 	struct msg * node;
 	node = (struct msg *)umalloc(sizeof(struct msg));
@@ -39,7 +39,7 @@ struct msg * node_init(word ReadPower, byte destID) {
 	node->destID = destID;
 	node->connect = 1;
 	node->hopCount = 0;
-	node->powerLVL = (byte)ReadPower;
+	node->powerLVL = ReadPower;
 
 	return node;
 }
@@ -50,7 +50,7 @@ fsm root {
 	address packet;
 	word p1, tr;
 	byte RSSI, LQI;
-	word ReadPower;
+	byte ReadPower;
 	int count = 0;
 	char c;
 
