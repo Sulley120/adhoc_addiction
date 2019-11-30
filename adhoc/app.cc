@@ -13,14 +13,13 @@
 
 byte nodeID = -1;
 byte pathID;
+byte destID;
 byte RSSI_C;
 byte LQI_C;
 byte hopCount;
 byte child_array[Max_Degree];
 word power = 0x0000;
 int sfd;
-
-
 
 struct msg {
 	byte nodeID;
@@ -29,8 +28,6 @@ struct msg {
 	byte hopCount;
 	byte powerLVL;
 };
-
-
 
 /*Creates a node and assigns it correct struct values */
 struct msg * node_init(word ReadPower, byte destID) {
@@ -48,7 +45,6 @@ struct msg * node_init(word ReadPower, byte destID) {
 }
 
 fsm root {
-
 	struct msg * payload;
 	lword t;
 	address packet;
@@ -61,7 +57,7 @@ fsm root {
 	/* initializes the root */
 	state Init:
 
-		phys_cc1100(0, CC1100_BUF_SZ); 
+		phys_cc1100(0, CC1100_BUF_SZ);
 		tcv_plug(0, &plug_null);
 		sfd = tcv_open(NONE, 0, 0);
 		if (sfd < 0) {
@@ -69,12 +65,12 @@ fsm root {
 			syserror(EASSERT, "no session");
 		}
 		tcv_control(sfd, PHYSOPT_ON, NULL);
-		
 
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
-		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
+		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
+
 		payload = node_init(ReadPower, -1);
 		leds(1, 1);
 	/* UART interfacing for sink node connections. */
@@ -98,7 +94,6 @@ fsm root {
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
 
-		
 		char * p = (char *)(packet+1);
 		*p = payload->nodeID;p++;
 		*p = payload->destID;p++;
@@ -123,7 +118,6 @@ fsm root {
 
 		//RSSI is check by potential parents
 		packet = tcv_rnp(Receive_Connection, sfd);
-		
 
 	state Measuring:
 
@@ -199,13 +193,100 @@ fsm root {
 
 	state End:
 		delay(10000000, End);
-
 }
 
-// fsm additional_send {
 
-		
-// }
+/* Parent send is the fsm for nodes to send information to their parents
+ * if they receive information from their children. */
+fsm parent_send {
+	struct msg * payload;
+	address packet;
+	word ReadPower;
+
+	state Init:
+		phys_cc1100(0, CC1100_BUF_SZ);
+		tcv_plug(0, &plug_null);
+		sfd = tcv_open(NONE, 0, 0);
+		if (sfd < 0) {
+			diag("unable to open TCV session.");
+			syserror(EASSERT, "no session");
+		}
+		tcv_control(sfd, PHYSOPT_ON, NULL);
+
+	/* Initializes the msg packet */
+	state Init_t:
+		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
+		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
+		payload = node_init(ReadPower);
+
+	state Sending:
+		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
+		packet = tcv_wnp(Sending, sfd, 10);
+		packet[0] = 0;
+		payload->destID = pathID; // Set node to send to its parent's ID
+
+		// Fill packet:
+		char * p = (char *)(packet+1);
+		*p = payload->nodeID;p++;
+		*p = payload->destID;p++;
+		*p = payload->connect;p++;
+		*p = payload->hopCount;p++;
+		*p = payload->powerLVL;p++;
+
+		tcv_endp(packet);
+		ufree(payload);
+		delay(2000, Init_t); //In two seconds, DO IT AGAIN
+}
+
+/* Child send is the fsm for nodes to send information to their children
+ * if they receive information from their parent. */
+fsm child_send {
+	struct msg * payload;
+	int count = 0;
+	address packet;
+	word ReadPower;
+
+	state Init:
+		phys_cc1100(0, CC1100_BUF_SZ);
+		tcv_plug(0, &plug_null);
+		sfd = tcv_open(NONE, 0, 0);
+		if (sfd < 0) {
+			diag("unable to open TCV session.");
+			syserror(EASSERT, "no session");
+		}
+		tcv_control(sfd, PHYSOPT_ON, NULL);
+
+	/* Initializes the msg packet */
+	state Init_t:
+		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
+		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
+		payload = node_init(ReadPower);
+		leds(2, 1); // I think LED 2 is yellow; turns on yellow light
+
+	state Sending:
+		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
+		packet = tcv_wnp(Sending, sfd, 10);
+		packet[0] = 0;
+
+		destID = children[count++];
+		payload->nodeID = destID; // Set node to send to its changing child ID
+
+		// Fill packet:
+		char * p = (char *)(packet+1);
+		*p = payload->nodeID;p++;
+		*p = payload->destID;p++;
+		*p = payload->connect;p++;
+		*p = payload->hopCount;p++;
+		*p = payload->powerLVL;p++;
+
+		tcv_endp(packet);
+		ufree(payload);
+
+		if (children[count] == NULL) return;
+
+		// Probably don't need two second delay, maybe make it half a second.
+		delay(2000, Init_t); //In two seconds, DO IT AGAIN
+}
 
 fsm receive {
 	address packet;
