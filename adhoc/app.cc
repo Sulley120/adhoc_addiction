@@ -21,8 +21,6 @@ byte child_array[Max_Degree];
 word power = 0x0000;
 int sfd;
 
-
-
 struct msg {
 	byte nodeID;
 	byte pathID;
@@ -30,8 +28,6 @@ struct msg {
 	byte hopCount;
 	word powerLVL;
 };
-
-
 
 /*Creates a node and assigns it correct struct values */
 struct msg * node_init(word ReadPower) {
@@ -49,7 +45,6 @@ struct msg * node_init(word ReadPower) {
 }
 
 fsm root {
-
 	struct msg * payload;
 	lword t;
 	address packet;
@@ -70,7 +65,6 @@ fsm root {
 			syserror(EASSERT, "no session");
 		}
 		tcv_control(sfd, PHYSOPT_ON, NULL);
-
 
 	/* Initializes the msg packet */
 	state Init_t:
@@ -96,7 +90,6 @@ fsm root {
 		time = seconds();
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
-
 
 		char * p = (char *)(packet+1);
 		*p = payload->nodeID;p++;
@@ -166,7 +159,6 @@ fsm root {
 	state Shut_Down:
 		leds_all(0);
 		finish;
-
 }
 
 /* Parent send is the fsm for nodes to send information to their parents
@@ -191,7 +183,6 @@ fsm parent_send {
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
 		payload = node_init(ReadPower);
-		leds(1, 1);
 
 	state Sending:
 		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
@@ -209,6 +200,55 @@ fsm parent_send {
 
 		tcv_endp(packet);
 		ufree(payload);
+		delay(2000, Init_t); //In two seconds, DO IT AGAIN
+}
+
+/* Child send is the fsm for nodes to send information to their children
+ * if they receive information from their parent. */
+fsm child_send {
+	struct msg * payload;
+	int count = 0;
+	address packet;
+	word ReadPower;
+
+	state Init:
+		phys_cc1100(0, CC1100_BUF_SZ);
+		tcv_plug(0, &plug_null);
+		sfd = tcv_open(NONE, 0, 0);
+		if (sfd < 0) {
+			diag("unable to open TCV session.");
+			syserror(EASSERT, "no session");
+		}
+		tcv_control(sfd, PHYSOPT_ON, NULL);
+
+	/* Initializes the msg packet */
+	state Init_t:
+		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
+		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
+		payload = node_init(ReadPower);
+		leds(2, 1); // I think LED 2 is yellow; turns on yellow light
+
+	state Sending:
+		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
+		packet = tcv_wnp(Sending, sfd, 10);
+		packet[0] = 0;
+
+		pathID = children[count++];
+		payload->nodeID = pathID; // Set node to send to its changing child ID
+
+		// Fill packet:
+		char * p = (char *)(packet+1);
+		*p = payload->nodeID;p++;
+		*p = payload->destID;p++;
+		*p = payload->connect;p++;
+		*p = payload->hopCount;p++;
+		*p = payload->powerLVL;p++;
+
+		tcv_endp(packet);
+		ufree(payload);
+
+		if (children[count] == NULL) return;
+
 		delay(2000, Init_t); //In two seconds, DO IT AGAIN
 }
 
