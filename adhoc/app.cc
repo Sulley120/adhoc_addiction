@@ -105,7 +105,7 @@ fsm root {
 			hopCount = 0;
 			// Run the receive fsm and don't try to connect to the tree
 			// TODO: We need the sink to send all messages to ser_out. Should it have its own receive fsm for this?
-			runfsm receive;
+			call receive;
 			proceed End;
 		}
 		payload->nodeID = nodeID;
@@ -134,7 +134,7 @@ fsm root {
 		if((seconds()-t) > 90){
 			// If connection end
 			if(count >= 1){
-				runfsm receive;
+				call receive;
 				proceed Connected;	
 			}
 			//else power up
@@ -185,7 +185,7 @@ fsm root {
 			proceed Shut_Down;
 		}
 		power++;
-		tcv_control (sfd, PHYSOPT_SETPOWER,(&power);
+		tcv_control (sfd, PHYSOPT_SETPOWER,(&power));
 		proceed Sending;
 
 	// If no suitable nodes respond, shut down.
@@ -208,7 +208,7 @@ fsm root {
 
 		tcv_endp(packet);
 		ufree(payload);
-		runfsm receiving;
+		call receiving;
 		
 	// If root finishes the whole program stops. Keep root running.
 	// TODO: Is there a better way for root to continue infinitely? This will end eventually
@@ -340,6 +340,7 @@ fsm child_send {
 fsm receive {
 	address packet;
 	int fromChild;
+	byte readPower;
 	word p1, tr;
 	byte RSSI, LQI;
 
@@ -400,7 +401,12 @@ fsm receive {
 			}
 			// If this is a totally new unknown node, send connection response.
 			else {
-				runfsm request_response;
+				tcv_control (sfd, PHYSOPT_SETPOWER, &power);
+               	 		tcv_control (sfd, PHYSOPT_GETPOWER, &readPower); 
+				if(readPower < payload->powerLVL) {
+					power = (word) readPower;
+					tcv_control (sfd, PHYSOPT_SETPOWER, &power;
+				call request_response;
 			}
 		}
 }
