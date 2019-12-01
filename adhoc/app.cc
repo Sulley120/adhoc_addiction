@@ -435,6 +435,6 @@ fsm receive {
 		}
 		// If this is a totally new unknown node, send connection response.
 		else {
-			runfsm request_response;
+			call request_response;
 		}
 }
