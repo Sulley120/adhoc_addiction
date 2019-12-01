@@ -255,10 +255,7 @@ fsm parent_send {
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-
-	state Receiving:
-		packet = tcv_rnp(Receiving,sfd); // wait for message from children
-
+	
 	state Check_Packet:
 		payload = (struct msg*)(packet+1);
 		if (payload->destID == destID)
