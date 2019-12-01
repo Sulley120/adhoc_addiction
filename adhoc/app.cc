@@ -19,7 +19,7 @@ byte RSSI_C;
 byte LQI_C;
 byte hopCount;
 byte child_array[Max_Degree];
-/* TODO: 
+/* TODO:
 Right now nodes slowly increase power until a node in the tree responds.
 But a node could potentially have enough power to talk to its parent, but not enough power to talk to its child or a new node
 It has the potential to hear a new node because its power is high, but it wont be able to respond because its power is too low
@@ -27,8 +27,8 @@ When a node receives a request to join it should increase its power to match the
 That way it is guaranteed to be able to talk to its children.
 Our sink node also starts at power 0, but the solution above probably solves this.
 
-Mohammed has stressed power consumption should be kept as low as possible at all times, 
-but this solution would bump the power of all nodes in range of a new node. Not super power efficient. 
+Mohammed has stressed power consumption should be kept as low as possible at all times,
+but this solution would bump the power of all nodes in range of a new node. Not super power efficient.
 Is there a better idea?
 
 Thank you for coming to my TED Talk.
@@ -83,7 +83,7 @@ fsm root {
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
-		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
+		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
 		payload = msg_init(-1, 1, 0, ReadPower);
 		leds(1, 1);
 
@@ -131,7 +131,7 @@ fsm root {
 			// If connection end
 			if(count >= 1){
 				runfsm receive;
-				proceed Connected;	
+				proceed Connected;
 			}
 			//else power up
             proceed Power_Up;
@@ -175,7 +175,7 @@ fsm root {
 		tcv_endp(packet);
 		// Go back to listening for connections until 1.5 seconds passes
 		proceed Wait_Connection;
-	
+
 	// Increments power until max and if max sends to shutdown.
 	state Power_Up:
 		if(power == 7){
@@ -190,7 +190,7 @@ fsm root {
 	state Shut_Down:
 		leds_all(0);
 		finish;
-	
+
 	// Generates final connection message
 	state Prep_Message:
 		payload = (struct msg *)umalloc(sizeof(struct msg));
@@ -198,7 +198,7 @@ fsm root {
        		payload->destID = destID;
 		payload->connect = 1;
 		payload->hopCount = hopCount;
-		payload->powerLVL = (byte) ReadPower;	
+		payload->powerLVL = (byte) ReadPower;
 
 	// Informs parent that it now has a child
 	state Connected:
@@ -212,7 +212,7 @@ fsm root {
 		*p = payload->connect;p++;
 		*p = payload->hopCount;p++;
 		*p = payload->powerLVL;
-		
+
 	// If root finishes the whole program stops. Keep root running.
 	// TODO: Is there a better way for root to continue infinitely? This will end eventually
 	state End:
@@ -245,32 +245,28 @@ fsm request_response {
 
 /* Parent send is the fsm for nodes to send information to their parents
  * if they receive information from their children. */
-/* TODO: Does this only send new messages from this node to its parent? 
+/* TODO: Does this only send new messages from this node to its parent?
 How does it get messages from its children to send to the parent? */
 fsm parent_send {
 	struct msg * payload;
 	address packet;
 	word ReadPower;
 
-	state Init:
-		// TODO: Do we need to do all this init stuff again? Once root has done it aren't we good?
-		phys_cc1100(0, CC1100_BUF_SZ);
-		tcv_plug(0, &plug_null);
-		sfd = tcv_open(NONE, 0, 0);
-		if (sfd < 0) {
-			diag("unable to open TCV session.");
-			syserror(EASSERT, "no session");
-		}
-		tcv_control(sfd, PHYSOPT_ON, NULL);
-
 	/* Initializes the msg packet */
 	state Init_t:
-		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-		// TODO: Update this to new msg_init arguments
-		payload = msg_init(ReadPower);
+
+	state Receiving:
+		packet = tcv_rnp(Receiving,sfd); // wait for message from children
+
+	state Check_Packet:
+		payload = (struct msg*)(packet+1);
+		if (payload->destID == destID)
+			proceed Sending;
+		else proceed Receiving;
 
 	state Sending:
+		/*
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
 		payload->destID = parentID; // Set node to send to its parent's ID
@@ -282,6 +278,7 @@ fsm parent_send {
 		*p = payload->connect;p++;
 		*p = payload->hopCount;p++;
 		*p = payload->powerLVL;p++;
+		*/
 
 		tcv_endp(packet);
 		ufree(payload);
@@ -289,33 +286,17 @@ fsm parent_send {
 }
 
 /* Child send is the fsm for nodes to send information to their children
- * if they receive information from their parent. */
+ * if they receive information from their parent.
 fsm child_send {
 	struct msg * payload;
 	int count = 0;
 	address packet;
 	word ReadPower;
 
-	state Init:
-		// TODO: Do we need to do all this init stuff again? Once root has done it aren't we good?
-		phys_cc1100(0, CC1100_BUF_SZ);
-		tcv_plug(0, &plug_null);
-		sfd = tcv_open(NONE, 0, 0);
-		if (sfd < 0) {
-			diag("unable to open TCV session.");
-			syserror(EASSERT, "no session");
-		}
-		tcv_control(sfd, PHYSOPT_ON, NULL);
-
-	/* Initializes the msg packet */
+	// Initializes the msg packet
 	state Init_t:
-		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-		// TODO: Update this to new msg_init arguments
-		payload = msg_init(ReadPower);
-		/* TODO: Is this the yellow LED that's supposed to turn on with the sink node control message? 
-		If so I feel this should be turned on in receive, not when it sends a message to its children */
-		leds(2, 1); // I think LED 2 is yellow; turns on yellow light
+		payload = msg_init(destID, 1, hopCount, ReadPower);
 
 	state Sending:
 		packet = tcv_wnp(Sending, sfd, 10);
@@ -337,9 +318,8 @@ fsm child_send {
 
 		if (child_array[count] == NULL) return;
 
-		// Probably don't need two second delay, maybe make it half a second.
 		delay(2000, Init_t); //In two seconds, DO IT AGAIN
-}
+} */
 
 /* Receives messages from other nodes and acts accordingly */
 fsm receive {
@@ -404,7 +384,6 @@ fsm receive {
 		}
 }
 
-/*  */
 /* TODO: Where will this be called?
 What's the difference between this and parent/child_send? */
 fsm info_sender {
