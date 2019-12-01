@@ -1,16 +1,17 @@
 #include "sysio.h"
 #include "serf.h"
 #include "ser.h"
-
 #include "phys_cc1100.h"
 #include "plug_null.h"
 #include "tcvphys.h"
 #include "tcv.h"
 
+// Define constants
 #define CC1100_BUF_SZ   60
 #define Min_RSSI        800
 #define Max_Degree      8
 
+// Initialize globals
 byte nodeID = -1;
 byte pathID;
 byte destID;
@@ -18,9 +19,24 @@ byte RSSI_C;
 byte LQI_C;
 byte hopCount;
 byte child_array[Max_Degree];
+/* TODO: 
+Right now nodes slowly increase power until a node in the tree responds.
+But a node could potentially have enough power to talk to its parent, but not enough power to talk to its child or a new node
+It has the potential to hear a new node because its power is high, but it wont be able to respond because its power is too low
+When a node receives a request to join it should increase its power to match the new node it hears.
+That way it is guaranteed to be able to talk to its children.
+Our sink node also starts at power 0, but the solution above probably solves this.
+
+Mohammed has stressed power consumption should be kept as low as possible at all times, 
+but this solution would bump the power of all nodes in range of a new node. Not super power efficient. 
+Is there a better idea?
+
+Thank you for coming to my TED Talk.
+ */
 word power = 0x0000;
 int sfd;
 
+// Message struct
 struct msg {
 	byte nodeID;
 	byte destID;
@@ -29,8 +45,8 @@ struct msg {
 	byte powerLVL;
 };
 
-/*Creates a node and assigns it correct struct values */
-struct msg * node_init(byte destID, byte connect, byte hopCount, byte ReadPower) {
+// Function to create and initialize a msg struct
+struct msg * msg_init(byte destID, byte connect, byte hopCount, byte ReadPower) {
 	struct msg * node;
 	node = (struct msg *)umalloc(sizeof(struct msg));
 	node->nodeID = nodeID;
@@ -42,6 +58,7 @@ struct msg * node_init(byte destID, byte connect, byte hopCount, byte ReadPower)
 	return node;
 }
 
+// Main fsm
 fsm root {
 	struct msg * payload;
 	lword t;
@@ -54,7 +71,6 @@ fsm root {
 
 	/* initializes the root */
 	state Init:
-
 		phys_cc1100(0, CC1100_BUF_SZ);
 		tcv_plug(0, &plug_null);
 		sfd = tcv_open(NONE, 0, 0);
@@ -68,12 +84,17 @@ fsm root {
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
-		payload = node_init(-1, 1, 0, ReadPower);
+		payload = msg_init(-1, 1, 0, ReadPower);
 		leds(1, 1);
-	/* UART interfacing for sink node connections. */
+
+	/* Ask if this node will be the sink */
 	state ASK_ser:
-		//ser_outf(ASK_ser, "NODE ID IS %x\n\r", nodeID);
 		ser_outf(ASK_ser, "Would you like to make this the sink node? (y/n)\n\r");
+
+	/* Wait for response */
+	/* TODO: Will all nodes be connected through serial to receive this message?
+	Can we just have a timeout, where if nobody answers within a time we assume
+	this won't be the sink node? */
 	state WAIT_ser:
 		ser_inf(WAIT_ser, "%c", &c);
        		/* Sets the sink nodeID to be 0. */
@@ -83,12 +104,10 @@ fsm root {
 			hopCount = 0;
 		}
 		payload->nodeID = nodeID;
-		//ser_outf(ASK_ser, "THIS IS NOW A SINK NODE\n\r");
 
 	// Sends a request to join the tree
 	// TODO: Make this conditional on nodeID != 0
 	state Sending:
-		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
 		//Sets timer
 		t = seconds();
 		packet = tcv_wnp(Sending, sfd, 10);
@@ -104,8 +123,10 @@ fsm root {
 		tcv_endp(packet);
 		ufree(payload);
 
+	// Wait to receive a response from a node in the tree
 	state Wait_Connection:
-
+		// At end of 1.5 seconds, check if the node received a connection
+		// TODO: Is this 90 seconds? Shouldn't it be 1.5?
 		if((seconds()-t) > 90){
 			// If connection end
 			if(count >= 1){
@@ -113,14 +134,15 @@ fsm root {
 				proceed Connected;	
 			}
 			//else power up
-                        proceed Power_Up;
-                }
-
-		//RSSI is check by potential parents
+            proceed Power_Up;
+        }
+		// RSSI is checked by potential parents
 		packet = tcv_rnp(Receive_Connection, sfd);
 
+	// Get information from received packet
+	/* TODO: We need to make sure these responses are actually connection responses
+	and not just nodes in the tree talking to each other */
 	state Measuring:
-
 		p1 = (tcv_left(packet))>>1;
 		tr = packet[p1-1];
 		RSSI = (byte) (tr>>8);
@@ -156,7 +178,6 @@ fsm root {
 	
 	//increments power until max and if max sends to shutdown.
 	state Power_Up:
-		
 		if(power == 7){
 			proceed Shut_Down;
 		}
@@ -202,7 +223,7 @@ fsm request_response {
 	srand((unsigned) time(&t));
 	byte newID = (byte) (rand() % 255 + 1);
 	struct msg * payload;
-	payload = node_init(newID, 1, hopCount, powerLVL);
+	payload = msg_init(newID, 1, hopCount, powerLVL);
 
 	state Sending:
 		packet = tcv_wnp(Sending, sfd, 10);
@@ -241,7 +262,8 @@ fsm parent_send {
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-		payload = node_init(ReadPower);
+		// TODO: Update this to new msg_init arguments
+		payload = msg_init(ReadPower);
 
 	state Sending:
 		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
@@ -284,7 +306,8 @@ fsm child_send {
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-		payload = node_init(ReadPower);
+		// TODO: Update this to new msg_init arguments
+		payload = msg_init(ReadPower);
 		leds(2, 1); // I think LED 2 is yellow; turns on yellow light
 
 	state Sending:
