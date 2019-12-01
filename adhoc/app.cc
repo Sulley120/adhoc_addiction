@@ -387,11 +387,11 @@ fsm receive {
 			}
 			// If this is a totally new unknown node, send connection response.
 			else {
-				tcv_control (sfd, PHYSOPT_SETPOWER, &power);
                	 		tcv_control (sfd, PHYSOPT_GETPOWER, &readPower); 
 				if(readPower < payload->powerLVL) {
 					power = (word) readPower;
-					tcv_control (sfd, PHYSOPT_SETPOWER, &power;
+					tcv_control (sfd, PHYSOPT_SETPOWER, &power);
+				}
 				call request_response;
 			}
 		}
