@@ -64,11 +64,11 @@ struct msg * msg_init(byte destID, byte sourceID, byte connect, byte hopCount, w
 /* Sends a connection response to a new node. Generates a random nodeID
 and sends that ID in the destID field */
 fsm request_response {
-	// time_t t;
-	// srand((unsigned) time(&t));
+	address packet;
+	struct msg * payload;
+
 	state Init:
 		byte newID = (byte) ((rand() % 254) + 1); // Number 1-254
-		struct msg * payload;
 		payload = msg_init(newID, nodeID, 1, hopCount, power);
 
 	state Sending:
@@ -214,7 +214,7 @@ fsm receive {
 		}
 
 	state FromChild:
-		packet = tcv_wnp(Connected, sfd, 12);
+		packet = tcv_wnp(FromChild, sfd, 12);
 		packet[0] = 0;
 
 		char * p = (char *)(packet+1);
@@ -232,13 +232,14 @@ fsm receive {
 	state FromParent:
 		ledOn++;
 		leds(0, ledOn);
+		int i;
 		for (i = 0; i < ((sizeof(child_array)/sizeof(byte))); i++) {
 			if (child_array[i] == NULL) {
 				break;
 			}
 			else {
 				payload = msg_init(child_array[i], payload->sourceID, 0, hopCount, power);
-				packet = tcv_wnp(Connected, sfd, 12);
+				packet = tcv_wnp(FromParent, sfd, 12);
 				packet[0] = 0;
 
 				char * p = (char *)(packet+1);
@@ -256,7 +257,7 @@ fsm receive {
 
 	state FromUnknown:
 		// If the new node's parent is us
-		if (payload->parentID == nodeID) {
+		if (payload->destID == nodeID) {
 			/* add child to the node tree updating child_array */
 			int i;
 			for (i = 0; i < ((sizeof(child_array)/sizeof(byte))); i++) {
