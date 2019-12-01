@@ -255,15 +255,8 @@ fsm parent_send {
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-	
-	state Check_Packet:
-		payload = (struct msg*)(packet+1);
-		if (payload->destID == destID)
-			proceed Sending;
-		else proceed Receiving;
 
 	state Sending:
-		/*
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
 		payload->destID = parentID; // Set node to send to its parent's ID
@@ -275,7 +268,6 @@ fsm parent_send {
 		*p = payload->connect;p++;
 		*p = payload->hopCount;p++;
 		*p = payload->powerLVL;p++;
-		*/
 
 		tcv_endp(packet);
 		ufree(payload);
