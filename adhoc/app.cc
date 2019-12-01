@@ -13,7 +13,7 @@
 
 // Initialize globals
 byte nodeID = -1;
-byte pathID;
+byte parentID;
 byte destID;
 byte RSSI_C;
 byte LQI_C;
@@ -50,7 +50,7 @@ struct msg * msg_init(byte destID, byte connect, byte hopCount, byte ReadPower) 
 	struct msg * node;
 	node = (struct msg *)umalloc(sizeof(struct msg));
 	node->nodeID = nodeID;
-	node->pathID = destID;
+	node->destID = destID;
 	node->connect = connect;
 	node->hopCount = hopCount;
 	node->powerLVL = ReadPower;
@@ -100,7 +100,7 @@ fsm root {
        		/* Sets the sink nodeID to be 0. */
 		if(c == 'y') {
 			nodeID = 0;
-			pathID = 0;
+			parentID = 0;
 			hopCount = 0;
 		}
 		payload->nodeID = nodeID;
@@ -150,39 +150,38 @@ fsm root {
 
 	// Compare the responding nodes and only save the best one
 	state Update:
-		//Parent is set to the node id of the message
-		//So the node id will always be id of the node who
-		//sent the message
+		/* Parent is set to the node id of the message
+		So the node id will always be id of the node who
+		sent the message */
 		struct msg* payload = (struct msg*)(packet + 1);
 
-		//checks for multiple connections
+		// Checks for multiple responses
 		count ++;
 		if(count > 1){
 			leds_all(0);
 			leds(3, 1);
-			// If distance receiveis short look for another
-			// connection
+			// If the newly received response is further away than a previous response
 			if((payload->hopCount + 1) > hopCount){
 				proceed Receive_Connection;
 			}
 		}
-		//updates if better connection
+		// Updates if better connection
 		RSSI_C = RSSI;
 		LQI_C = LQI;
 		hopCount = payload->hopCount + 1;
-		pathID = payload->nodeID;
+		parentID = payload->nodeID;
 		nodeID = payload->destID;
 
 		tcv_endp(packet);
+		// Go back to listening for connections until 1.5 seconds passes
 		proceed Wait_Connection;
 	
-	//increments power until max and if max sends to shutdown.
+	// Increments power until max and if max sends to shutdown.
 	state Power_Up:
 		if(power == 7){
 			proceed Shut_Down;
 		}
 		power++;
-
 		tcv_control (sfd, PHYSOPT_SETPOWER,(&power);
 		proceed Sending;
 
@@ -192,9 +191,8 @@ fsm root {
 		leds_all(0);
 		finish;
 	
-	//generates final connection message
+	// Generates final connection message
 	state Prep_Message:
-		
 		payload = (struct msg *)umalloc(sizeof(struct msg));
 		payload->nodeID = nodeID;
        		payload->destID = destID;
@@ -204,8 +202,9 @@ fsm root {
 
 	// Informs parent that it now has a child
 	state Connected:
-		
+		// TODO: Should this not be tcv_wnp(Connected, sfd, 10);?
 		packet = tcv_wnp(sending, sfd, 10);
+		// TODO: Are we missing packet[0] = 0; ?
 
 		char * p = (char *)(packet+1);
 		*p = payload->nodeID;p++;
@@ -214,14 +213,17 @@ fsm root {
 		*p = payload->hopCount;p++;
 		*p = payload->powerLVL;
 		
-
+	// If root finishes the whole program stops. Keep root running.
+	// TODO: Is there a better way for root to continue infinitely? This will end eventually
 	state End:
 		delay(10000000, End);
 }
 
+/* Sends a connection response to a new node. Generates a random nodeID
+and sends that ID in the destID field */
 fsm request_response {
 	srand((unsigned) time(&t));
-	byte newID = (byte) (rand() % 255 + 1);
+	byte newID = (byte) ((rand() % 254) + 1); // Number 1-254
 	struct msg * payload;
 	payload = msg_init(newID, 1, hopCount, powerLVL);
 
@@ -231,7 +233,7 @@ fsm request_response {
 
 		char * p = (char *)(packet+1);
 		*p = payload->nodeID;p++;
-		*p = payload->pathID;p++;
+		*p = payload->destID;p++;
 		*p = payload->connect;p++;
 		*p = payload->hopCount;p++;
 		*p = payload->powerLVL;
@@ -243,12 +245,15 @@ fsm request_response {
 
 /* Parent send is the fsm for nodes to send information to their parents
  * if they receive information from their children. */
+/* TODO: Does this only send new messages from this node to its parent? 
+How does it get messages from its children to send to the parent? */
 fsm parent_send {
 	struct msg * payload;
 	address packet;
 	word ReadPower;
 
 	state Init:
+		// TODO: Do we need to do all this init stuff again? Once root has done it aren't we good?
 		phys_cc1100(0, CC1100_BUF_SZ);
 		tcv_plug(0, &plug_null);
 		sfd = tcv_open(NONE, 0, 0);
@@ -266,10 +271,9 @@ fsm parent_send {
 		payload = msg_init(ReadPower);
 
 	state Sending:
-		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
-		payload->destID = pathID; // Set node to send to its parent's ID
+		payload->destID = parentID; // Set node to send to its parent's ID
 
 		// Fill packet:
 		char * p = (char *)(packet+1);
@@ -293,6 +297,7 @@ fsm child_send {
 	word ReadPower;
 
 	state Init:
+		// TODO: Do we need to do all this init stuff again? Once root has done it aren't we good?
 		phys_cc1100(0, CC1100_BUF_SZ);
 		tcv_plug(0, &plug_null);
 		sfd = tcv_open(NONE, 0, 0);
@@ -308,14 +313,15 @@ fsm child_send {
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
 		// TODO: Update this to new msg_init arguments
 		payload = msg_init(ReadPower);
+		/* TODO: Is this the yellow LED that's supposed to turn on with the sink node control message? 
+		If so I feel this should be turned on in receive, not when it sends a message to its children */
 		leds(2, 1); // I think LED 2 is yellow; turns on yellow light
 
 	state Sending:
-		//ser_outf(Sending, "THIS IS NOW IN SENDING\n\r");
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
-
-		destID = children[count++];
+		// TODO: Is this assuming this node has at least one child in child_array[0]? What if this node has no children?
+		destID = child_array[count++];
 		payload->nodeID = destID; // Set node to send to its changing child ID
 
 		// Fill packet:
@@ -329,22 +335,24 @@ fsm child_send {
 		tcv_endp(packet);
 		ufree(payload);
 
-		if (children[count] == NULL) return;
+		if (child_array[count] == NULL) return;
 
 		// Probably don't need two second delay, maybe make it half a second.
 		delay(2000, Init_t); //In two seconds, DO IT AGAIN
 }
 
+/* Receives messages from other nodes and acts accordingly */
 fsm receive {
 	address packet;
-	int check;
+	int fromChild;
 	word p1, tr;
 	byte RSSI, LQI;
+
 	state Receiving:
 		packet = tcv_rnp(Receiving,sfd);
 
 	/* state to get the RSSI and LQI from the recieved packet. */
-	state Measureing:
+	state Measuring:
 		p1 = (tcv_left(packet))>>1;
 		tr = packet[p1-1];
 		RSSI = (byte)(tr>>8);
@@ -357,26 +365,29 @@ fsm receive {
 		int i;
 		for (i = 0; i < (sizeof(child_array)/sizeof(byte)); i++) {
 			if(payload->nodeID == child_array[i]) {
-			       	check = 1;
+			       	fromChild = 1;
 			}
 		}
-		/* If the message comes from a parent node. */
-		if(payload->nodeID == pathID) {
+		/* If the message comes from the parent node. */
+		if(payload->nodeID == parentID) {
+			// TODO: This should toggle on/off
 			leds(2, 1);
-
 		}
 
 		/* If the message comes from a child node. */
-		else if(check == 1) {
-
+		else if(fromChild == 1) {
+			// TODO: This should forward the message to the parent
+			continue;
 		}
 		/* If the message comes from a new connection */
 		else if (payload->connect == 1) {
+			// If RSSI less than the minimum or the max # of children for this node has been reached
 			if (RSSI < Min_RSSI || ((sizeof(child_array)/sizeof(byte)) == Max_Degree)) {
 				proceed Receiving;
 			}
+
 			// If the new node's parent is us
-			if (payload->pathID == nodeID) {
+			if (payload->parentID == nodeID) {
 				/* add child to the node tree updating child_array */
 				int i;
 				for (i = 0; i < ((sizeof(child_array)/sizeof(byte))); i++) {
@@ -386,30 +397,30 @@ fsm receive {
 					}
 				}
 			}
+			// If this is a totally new unknown node, send connection response.
 			else {
-				// TODO: If received message has connect == 1 
 				runfsm request_response;
 			}
 		}
 }
 
-
+/*  */
+/* TODO: Where will this be called?
+What's the difference between this and parent/child_send? */
 fsm info_sender {
-
 	address packet;
 	struct msg * payload;
 
+	// TODO: This can use our msg_init function
 	state Init_Message:
-
 		payload = (struct msg *)umalloc(sizeof(struct msg));
-		payload->nodeID = nodeID
-		payload->destID = destID
-		payload->connect = connect
-		payload->hopConnect = hopConnect;
+		payload->nodeID = nodeID;
+		payload->destID = destID;
+		payload->connect = connect;
+		payload->hopCount = hopCount;
 		payload->powerLVL = power;
 
 	state Sending:
-
 		packet = tcv_wnp(Sending, sfd, 10);
 		packet[0] = 0;
 
@@ -425,5 +436,4 @@ fsm info_sender {
 
 	state Wait:
 		delay(2000, Init_Message);
-
 }
