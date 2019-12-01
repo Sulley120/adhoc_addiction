@@ -166,10 +166,12 @@ fsm receive {
 	int ledOn = 0;
 
 	state Receiving:
-		packet = tcv_rnp(Receiving,sfd);
+		ser_outf(Receiving, "RECEIVING STATE, NODE ID IS: %x\n\r", nodeID);
+		packet = tcv_rnp(Receiving, sfd);
 
 	/* state to get the RSSI and LQI from the recieved packet. */
 	state Measuring:
+		ser_outf(Measuring, "MEASURING STATE, NODE ID IS: %x\n\r", nodeID);
 		p1 = (tcv_left(packet))>>1;
 		tr = packet[p1-1];
 		RSSI = (byte)(tr>>8);
@@ -177,7 +179,7 @@ fsm receive {
 
 	state CheckSource:
 		struct msg* payload = (struct msg*)(packet+1);
-
+		seroutf(CheckSource, "CHECKSOURCE STATE, MSG NODE ID IS: %x\n\r", payload->nodeID);
 		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < (sizeof(child_array)/sizeof(byte)); i++) {
@@ -206,7 +208,7 @@ fsm receive {
 	state FromChildInit:
 		// If this is the sink node, print info
 		if (nodeID == 0) {
-			ser_outf(Receiving, "NodeID: %02X powerLVL: %02X\n\r", payload->nodeID, payload->powerLVL);
+			ser_outf(Receiving, "NodeID: %x powerLVL: %x\n\r", payload->nodeID, payload->powerLVL);
 			proceed Receiving;
 		}
 		else {
@@ -430,6 +432,9 @@ fsm root {
 
 		tcv_endp(packet);
 		ufree(payload);
+		call parent_send(AlmostEnd);
+		
+	state AlmostEnd:
 		call receive(End);
 		
 	// If root finishes the whole program stops. Keep root running.
