@@ -37,6 +37,7 @@ word power = 0x0000;
 int sfd;
 
 // Message struct
+// TODO: Do we need a senderID byte for the node that originally sent the message?
 struct msg {
 	byte nodeID;
 	byte destID;
@@ -97,16 +98,19 @@ fsm root {
 	this won't be the sink node? */
 	state WAIT_ser:
 		ser_inf(WAIT_ser, "%c", &c);
-       		/* Sets the sink nodeID to be 0. */
+       	/* Sets the sink nodeID to be 0. */
 		if(c == 'y') {
 			nodeID = 0;
 			parentID = 0;
 			hopCount = 0;
+			// Run the receive fsm and don't try to connect to the tree
+			// TODO: We need the sink to send all messages to ser_out. Should it have its own receive fsm for this?
+			call receive;
+			proceed End;
 		}
 		payload->nodeID = nodeID;
 
-	// Sends a request to join the tree
-	// TODO: Make this conditional on nodeID != 0
+	// Sends a request to join the tree if not sink node
 	state Sending:
 		//Sets timer
 		t = seconds();
@@ -130,7 +134,7 @@ fsm root {
 		if((seconds()-t) > 90){
 			// If connection end
 			if(count >= 1){
-				runfsm receive;
+				call receive;
 				proceed Connected;
 			}
 			//else power up
@@ -140,8 +144,6 @@ fsm root {
 		packet = tcv_rnp(Receive_Connection, sfd);
 
 	// Get information from received packet
-	/* TODO: We need to make sure these responses are actually connection responses
-	and not just nodes in the tree talking to each other */
 	state Measuring:
 		p1 = (tcv_left(packet))>>1;
 		tr = packet[p1-1];
@@ -150,27 +152,28 @@ fsm root {
 
 	// Compare the responding nodes and only save the best one
 	state Update:
-		/* Parent is set to the node id of the message
-		So the node id will always be id of the node who
-		sent the message */
 		struct msg* payload = (struct msg*)(packet + 1);
-
-		// Checks for multiple responses
-		count ++;
-		if(count > 1){
-			leds_all(0);
-			leds(3, 1);
-			// If the newly received response is further away than a previous response
-			if((payload->hopCount + 1) > hopCount){
-				proceed Receive_Connection;
+		if (payload->connect == 1) {
+			// Checks for multiple responses
+			count ++;
+			if(count > 1){
+				leds_all(0);
+				leds(3, 1);
+				// If the newly received response is further away than a previous response
+				if((payload->hopCount + 1) > hopCount){
+					proceed Receive_Connection;
+				}
 			}
+			// Updates if better connection
+			RSSI_C = RSSI;
+			LQI_C = LQI;
+			hopCount = payload->hopCount + 1;
+			/* parentID is set to the nodeID of the message
+			So the node id will always be id of the node who
+			sent the message */
+			parentID = payload->nodeID;
+			nodeID = payload->destID;
 		}
-		// Updates if better connection
-		RSSI_C = RSSI;
-		LQI_C = LQI;
-		hopCount = payload->hopCount + 1;
-		parentID = payload->nodeID;
-		nodeID = payload->destID;
 
 		tcv_endp(packet);
 		// Go back to listening for connections until 1.5 seconds passes
@@ -182,11 +185,10 @@ fsm root {
 			proceed Shut_Down;
 		}
 		power++;
-		tcv_control (sfd, PHYSOPT_SETPOWER,(&power);
+		tcv_control (sfd, PHYSOPT_SETPOWER,(&power));
 		proceed Sending;
 
 	// If no suitable nodes respond, shut down.
-	// TODO: Should red LED go on?
 	state Shut_Down:
 		leds_all(0);
 		finish;
@@ -202,9 +204,9 @@ fsm root {
 
 	// Informs parent that it now has a child
 	state Connected:
-		// TODO: Should this not be tcv_wnp(Connected, sfd, 10);?
-		packet = tcv_wnp(sending, sfd, 10);
-		// TODO: Are we missing packet[0] = 0; ?
+		payload = msg_init(destID, 1, hopCount, ReadPower);
+		packet = tcv_wnp(Connected, sfd, 10);
+		packet[0] = 0;
 
 		char * p = (char *)(packet+1);
 		*p = payload->nodeID;p++;
@@ -213,6 +215,10 @@ fsm root {
 		*p = payload->hopCount;p++;
 		*p = payload->powerLVL;
 
+		tcv_endp(packet);
+		ufree(payload);
+		call receiving;
+		
 	// If root finishes the whole program stops. Keep root running.
 	// TODO: Is there a better way for root to continue infinitely? This will end eventually
 	state End:
@@ -255,6 +261,7 @@ fsm parent_send {
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
+		payload = msg_init(destID, 0, hopCount, ReadPower);
 
 	state Sending:
 		packet = tcv_wnp(Sending, sfd, 10);
@@ -285,6 +292,11 @@ fsm child_send {
 	// Initializes the msg packet
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
+
+		payload = msg_init(destID, 0, hopCount, ReadPower);
+		 TODO: Is this the yellow LED that's supposed to turn on with the sink node control message? 
+		If so I feel this should be turned on in receive, not when it sends a message to its children 
+		leds(2, 1); // I think LED 2 is yellow; turns on yellow light
 		payload = msg_init(destID, 1, hopCount, ReadPower);
 
 	state Sending:
@@ -314,6 +326,7 @@ fsm child_send {
 fsm receive {
 	address packet;
 	int fromChild;
+	byte readPower;
 	word p1, tr;
 	byte RSSI, LQI;
 
@@ -345,8 +358,14 @@ fsm receive {
 
 		/* If the message comes from a child node. */
 		else if(fromChild == 1) {
+			// If this is the sink node, print info
+			if (nodeID == 0) {
+				ser_outf(Receiving, "NodeID: %02X powerLVL: %02X\n\r", payload->nodeID, payload->powerLVL);
+			}
 			// TODO: This should forward the message to the parent
-			continue;
+			else {
+				continue;
+			}
 		}
 		/* If the message comes from a new connection */
 		else if (payload->connect == 1) {
@@ -368,7 +387,12 @@ fsm receive {
 			}
 			// If this is a totally new unknown node, send connection response.
 			else {
-				runfsm request_response;
+				tcv_control (sfd, PHYSOPT_SETPOWER, &power);
+               	 		tcv_control (sfd, PHYSOPT_GETPOWER, &readPower); 
+				if(readPower < payload->powerLVL) {
+					power = (word) readPower;
+					tcv_control (sfd, PHYSOPT_SETPOWER, &power;
+				call request_response;
 			}
 		}
 }
@@ -378,15 +402,7 @@ What's the difference between this and parent/child_send? */
 fsm info_sender {
 	address packet;
 	struct msg * payload;
-
-	// TODO: This can use our msg_init function
-	state Init_Message:
-		payload = (struct msg *)umalloc(sizeof(struct msg));
-		payload->nodeID = nodeID;
-		payload->destID = destID;
-		payload->connect = connect;
-		payload->hopCount = hopCount;
-		payload->powerLVL = power;
+	payload = msg_init(destID, 0, hopCount, power);
 
 	state Sending:
 		packet = tcv_wnp(Sending, sfd, 10);
