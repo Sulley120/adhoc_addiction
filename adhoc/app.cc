@@ -63,6 +63,7 @@ struct msg * msg_init(byte destID, byte connect, byte hopCount, byte ReadPower) 
 fsm root {
 	struct msg * payload;
 	lword t;
+	lword timeout;
 	address packet;
 	word p1, tr;
 	byte RSSI, LQI;
@@ -90,6 +91,7 @@ fsm root {
 
 	/* Ask if this node will be the sink */
 	state ASK_ser:
+		timeout = seconds()
 		ser_outf(ASK_ser, "Would you like to make this the sink node? (y/n)\n\r");
 
 	/* Wait for response */
@@ -97,6 +99,8 @@ fsm root {
 	Can we just have a timeout, where if nobody answers within a time we assume
 	this won't be the sink node? */
 	state WAIT_ser:
+
+		if(((seconds())-timeout)>30){proceed Sending;}
 		ser_inf(WAIT_ser, "%c", &c);
        	/* Sets the sink nodeID to be 0. */
 		if(c == 'y') {
@@ -131,7 +135,7 @@ fsm root {
 	state Wait_Connection:
 		// At end of 1.5 seconds, check if the node received a connection
 		// TODO: Is this 90 seconds? Shouldn't it be 1.5?
-		if((seconds()-t) > 90){
+		if((seconds()-t) > 1.5){
 			// If connection end
 			if(count >= 1){
 				call receive;
