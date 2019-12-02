@@ -246,6 +246,7 @@ fsm root {
 	word p1, tr;
 	byte RSSI, LQI;
 	word ReadPower;
+	// TODO: Maybe use delay(time, state) before the ser_inf and that will trigger after 30 secs?
 	word *timer;
 	utimer_add(timer);
 	int count = 0;
