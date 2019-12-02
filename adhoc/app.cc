@@ -295,13 +295,13 @@ fsm root {
 
 	// Sends a request to join the tree if not sink node
 	state Sending:
-		// At end of 1.5 seconds, check if the node received a connection
 		runfsm Broadcast;
-		delay(1500, Check_Connections);
 
 	// Wait to receive a response from a node in the tree
 	state Wait_Connection:
-		ser_outf(NONE, "ARE WE AT LEAST WAITING FOR A CONNECTION?\n\r");
+		// At end of 1.5 seconds, check if the node received a connection
+		delay(1500, Check_Connections);
+		ser_outf(Wait_Connections, "ARE WE AT LEAST WAITING FOR A CONNECTION?\n\r");
 		// RSSI is checked by potential parents
 		packet = tcv_rnp(Wait_Connection, sfd);
 
@@ -346,7 +346,7 @@ fsm root {
 	state Check_Connections:
 		// If connection end
 		if(count >= 1){
-			proceed Connected;
+			proceed Prep_Message;
 		}
 		//else power up
 		proceed Power_Up;
@@ -371,7 +371,6 @@ fsm root {
 
 	// Informs parent that it now has a child
 	state Connected:
-		payload = msg_init(destID, nodeID, 1, hopCount, power);
 		packet = tcv_wnp(Connected, sfd, 12);
 		packet[0] = 0;
 
