@@ -8,7 +8,7 @@
 
 // Define constants
 #define CC1100_BUF_SZ   60
-#define Min_RSSI        800
+#define Min_RSSI        100
 #define Max_Degree      8
 
 // Initialize globals
@@ -116,45 +116,6 @@ fsm parent_send {
 		delay(2000, Init_t); //In two seconds, DO IT AGAIN
 }
 
-/* Child send is the fsm for nodes to send information to their children
- * if they receive information from their parent.
-fsm child_send {
-	struct msg * payload;
-	int count = 0;
-	address packet;
-	word ReadPower;
-
-	// Initializes the msg packet
-	state Init_t:
-		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);
-
-		payload = msg_init(destID, 0, hopCount, ReadPower);
-		If so I feel this should be turned on in receive, not when it sends a message to its children 
-		leds(2, 1); // I think LED 2 is yellow; turns on yellow light
-		payload = msg_init(destID, 1, hopCount, ReadPower);
-
-	state Sending:
-		packet = tcv_wnp(Sending, sfd, 12);
-		packet[0] = 0;
-		destID = child_array[count++];
-		payload->nodeID = destID; // Set node to send to its changing child ID
-
-		// Fill packet:
-		char * p = (char *)(packet+1);
-		*p = payload->nodeID;p++;
-		*p = payload->destID;p++;
-		*p = payload->connect;p++;
-		*p = payload->hopCount;p++;
-		*p = payload->powerLVL;p++;
-
-		tcv_endp(packet);
-		ufree(payload);
-
-		if (child_array[count] == NULL) return;
-
-		delay(2000, Init_t); //In two seconds, DO IT AGAIN
-} */
-
 /* Receives messages from other nodes and acts accordingly */
 fsm receive {
 	address packet;
@@ -179,7 +140,7 @@ fsm receive {
 
 	state CheckSource:
 		struct msg* payload = (struct msg*)(packet+1);
-		seroutf(CheckSource, "CHECKSOURCE STATE, MSG NODE ID IS: %x\n\r", payload->nodeID);
+		ser_outf(CheckSource, "CHECKSOURCE STATE, MSG NODE ID IS: %x\n\r", payload->nodeID);
 		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < (sizeof(child_array)/sizeof(byte)); i++) {
@@ -232,8 +193,9 @@ fsm receive {
 		proceed Receiving;
 
 	state FromParent:
-		ledOn++;
-		leds(0, ledOn);
+		ser_outf(FromParent, "FROM PARENT STATE, NODE ID IS: %x\n\r", nodeID);
+		//ledOn++;
+		leds(0, 1);
 		int i;
 		for (i = 0; i < ((sizeof(child_array)/sizeof(byte))); i++) {
 			if (child_array[i] == NULL) {
@@ -284,6 +246,8 @@ fsm root {
 	word p1, tr;
 	byte RSSI, LQI;
 	word ReadPower;
+	word *timer;
+	utimer_add(timer);
 	int count = 0;
 	char c;
 
@@ -306,15 +270,16 @@ fsm root {
 
 	/* Ask if this node will be the sink */
 	state ASK_ser:
-		timeout = seconds();
 		ser_outf(ASK_ser, "Would you like to make this the sink node? (y/n)\n\r");
 
 	/* Wait for response */
 	state WAIT_ser:
-
-		if(((seconds())-timeout)>30){proceed Sending;}
+		utimer_set(&timer, 30000);
+		if(!timer){
+			proceed Sending;
+		}
 		ser_inf(WAIT_ser, "%c", &c);
-       	/* Sets the sink nodeID to be 0. */
+		/* Sets the sink nodeID to be 0. */
 		if(c == 'y') {
 			nodeID = 0;
 			parentID = 0;
@@ -322,13 +287,18 @@ fsm root {
 			// Run the receive fsm and don't try to connect to the tree
 			call receive(End);
 		}
+		else {
+			proceed Sending;
+		}
 		//payload->nodeID = nodeID;
 
 	// Sends a request to join the tree if not sink node
 	state Sending:
+		ser_outf(Sending, "INSIDE SENDING NOW\n\r");
 		payload = msg_init(-1, nodeID, 1, 0, ReadPower);
 		//Sets timer
 		t = seconds();
+		utimer_set(&timer, 1500);
 		packet = tcv_wnp(Sending, sfd, 12);
 		packet[0] = 0;
 
@@ -345,8 +315,9 @@ fsm root {
 
 	// Wait to receive a response from a node in the tree
 	state Wait_Connection:
+		ser_outf(Wait_Connection, "INSIDE WAIT CONNECTION NOW\n\r");
 		// At end of 1.5 seconds, check if the node received a connection
-		if((seconds()-t) > 1.5){
+		if(!timer){
 			// If connection end
 			if(count >= 1){
 				call receive(Connected);
