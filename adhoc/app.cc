@@ -19,20 +19,7 @@ byte RSSI_C;
 byte LQI_C;
 byte hopCount;
 byte child_array[Max_Degree];
-/* TODO:
-Right now nodes slowly increase power until a node in the tree responds.
-But a node could potentially have enough power to talk to its parent, but not enough power to talk to its child or a new node
-It has the potential to hear a new node because its power is high, but it wont be able to respond because its power is too low
-When a node receives a request to join it should increase its power to match the new node it hears.
-That way it is guaranteed to be able to talk to its children.
-Our sink node also starts at power 0, but the solution above probably solves this.
-
-Mohammed has stressed power consumption should be kept as low as possible at all times,
-but this solution would bump the power of all nodes in range of a new node. Not super power efficient.
-Is there a better idea?
-
-Thank you for coming to my TED Talk.
- */
+int numChildren = 0;
 word power = 0x0000;
 int sfd;
 
@@ -72,6 +59,7 @@ fsm request_response {
 		payload = msg_init(newID, nodeID, 1, hopCount, power);
 
 	state Sending:
+		ser_outf(Sending, "SENDING RESPONSE, MSG is NEWNODE: %x  SOURCENODE: %x  CONNECT: %x\n\rHOPCOUNT: %x POWER: %x\n\r\n\r", payload->destID, payload->sourceID, payload->connect, payload->hopCount, payload->powerLVL);
 		packet = tcv_wnp(Sending, sfd, 12);
 		packet[0] = 0;
 
@@ -121,18 +109,16 @@ fsm receive {
 	address packet;
 	int fromChild;
 	struct msg * payload;
-	byte readPower;
 	word p1, tr;
 	byte RSSI, LQI;
 	int ledOn = 0;
+	byte temp_power;
 
 	state Receiving:
-		ser_outf(Receiving, "RECEIVING STATE, NODE ID IS: %x\n\r", nodeID);
 		packet = tcv_rnp(Receiving, sfd);
 
 	/* state to get the RSSI and LQI from the recieved packet. */
 	state Measuring:
-		ser_outf(Measuring, "MEASURING STATE, NODE ID IS: %x\n\r", nodeID);
 		p1 = (tcv_left(packet))>>1;
 		tr = packet[p1-1];
 		RSSI = (byte)(tr>>8);
@@ -140,10 +126,11 @@ fsm receive {
 
 	state CheckSource:
 		struct msg* payload = (struct msg*)(packet+1);
-		ser_outf(CheckSource, "CHECKSOURCE STATE, MSG NODE ID IS: %x\n\r", payload->nodeID);
+		temp_power = payload->powerLVL;
+		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload->nodeID, payload->destID, temp_power, payload->connect, (int)RSSI);
 		/*checks to see if the message is coming from a child node. */
 		int i;
-		for (i = 0; i < (sizeof(child_array)/sizeof(byte)); i++) {
+		for (i = 0; i < numChildren; i++) {
 			if(payload->nodeID == child_array[i]) {
 			       	fromChild = 1;
 			}
@@ -158,15 +145,16 @@ fsm receive {
 			proceed FromChildInit;
 		}
 		/* If the message comes from a new connection */
-		else if (payload->connect == 1) {
+		else if (((int)payload->connect) == 1) {
 			// If RSSI less than the minimum or the max # of children for this node has been reached
-			if (RSSI < Min_RSSI || ((sizeof(child_array)/sizeof(byte)) == Max_Degree)) {
+			if (RSSI < Min_RSSI || numChildren == Max_Degree) {
 				proceed Receiving;
 			}
 			proceed FromUnknown;
 		}
 
 	state FromChildInit:
+		ser_outf(FromChildInit, "FROM CHILD STATE\n\r");
 		// If this is the sink node, print info
 		if (nodeID == 0) {
 			ser_outf(Receiving, "NodeID: %x powerLVL: %x\n\r", payload->nodeID, payload->powerLVL);
@@ -193,43 +181,37 @@ fsm receive {
 		proceed Receiving;
 
 	state FromParent:
-		ser_outf(FromParent, "FROM PARENT STATE, NODE ID IS: %x\n\r", nodeID);
+		ser_outf(FromParent, "FROM PARENT STATE\n\r");
 		//ledOn++;
 		leds(0, 1);
 		int i;
-		for (i = 0; i < ((sizeof(child_array)/sizeof(byte))); i++) {
-			if (child_array[i] == NULL) {
-				break;
-			}
-			else {
-				payload = msg_init(child_array[i], payload->sourceID, 0, hopCount, power);
-				packet = tcv_wnp(FromParent, sfd, 12);
-				packet[0] = 0;
+		for (i = 0; i < numChildren; i++) {
+			payload = msg_init(child_array[i], payload->sourceID, 0, hopCount, power);
+			packet = tcv_wnp(FromParent, sfd, 12);
+			packet[0] = 0;
 
-				char * p = (char *)(packet+1);
-				*p = payload->nodeID;p++;
-				*p = payload->destID;p++;
-				*p = payload->sourceID;p++;
-				*p = payload->connect;p++;
-				*p = payload->hopCount;p++;
-				*p = payload->powerLVL;
+			char * p = (char *)(packet+1);
+			*p = payload->nodeID;p++;
+			*p = payload->destID;p++;
+			*p = payload->sourceID;p++;
+			*p = payload->connect;p++;
+			*p = payload->hopCount;p++;
+			*p = payload->powerLVL;
 
-				tcv_endp(packet);
-				ufree(payload);
-			}
+			tcv_endp(packet);
+			ufree(payload);
 		}
 
 	state FromUnknown:
+		//ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE POWER IS: %x    MSG POWER IS: %x\n\r", (byte)power, temp_power);
+		if ((word)temp_power > power) {
+			power = (word)temp_power;
+		}
 		// If the new node's parent is us
 		if (payload->destID == nodeID) {
 			/* add child to the node tree updating child_array */
-			int i;
-			for (i = 0; i < ((sizeof(child_array)/sizeof(byte))); i++) {
-				if (child_array[i] == NULL) {
-					child_array[i] = payload->nodeID;
-					break;
-				}
-			}
+			child_array[numChildren] = payload->nodeID;
+			numChildren++;
 		}
 		// If this is a totally new unknown node, send connection response.
 		else {
@@ -247,8 +229,6 @@ fsm root {
 	byte RSSI, LQI;
 	word ReadPower;
 	// TODO: Maybe use delay(time, state) before the ser_inf and that will trigger after 30 secs?
-	word *timer;
-	utimer_add(timer);
 	int count = 0;
 	char c;
 
@@ -272,13 +252,12 @@ fsm root {
 	/* Ask if this node will be the sink */
 	state ASK_ser:
 		ser_outf(ASK_ser, "Would you like to make this the sink node? (y/n)\n\r");
-
+		delay(30000, Sending);
 	/* Wait for response */
 	state WAIT_ser:
-		utimer_set(&timer, 30000);
-		if(!timer){
-			proceed Sending;
-		}
+		// if(!timer){
+		// 	proceed Sending;
+		// }
 		ser_inf(WAIT_ser, "%c", &c);
 		/* Sets the sink nodeID to be 0. */
 		if(c == 'y') {
@@ -286,7 +265,7 @@ fsm root {
 			parentID = 0;
 			hopCount = 0;
 			// Run the receive fsm and don't try to connect to the tree
-			call receive(End);
+			proceed End;
 		}
 		else {
 			proceed Sending;
@@ -295,11 +274,11 @@ fsm root {
 
 	// Sends a request to join the tree if not sink node
 	state Sending:
-		ser_outf(Sending, "INSIDE SENDING NOW\n\r");
-		payload = msg_init(-1, nodeID, 1, 0, ReadPower);
+		// ser_outf(Sending, "INSIDE SENDING NOW, POWER = %x\n\r", power);
+		payload = msg_init(-1, nodeID, 1, 0, power);
 		//Sets timer
-		t = seconds();
-		utimer_set(&timer, 1500);
+		// At end of 1.5 seconds, check if the node received a connection
+		delay(1500, Check_Connections);
 		packet = tcv_wnp(Sending, sfd, 12);
 		packet[0] = 0;
 
@@ -316,21 +295,13 @@ fsm root {
 
 	// Wait to receive a response from a node in the tree
 	state Wait_Connection:
-		ser_outf(Wait_Connection, "INSIDE WAIT CONNECTION NOW\n\r");
-		// At end of 1.5 seconds, check if the node received a connection
-		if(!timer){
-			// If connection end
-			if(count >= 1){
-				call receive(Connected);
-			}
-			//else power up
-            proceed Power_Up;
-        }
+		ser_outf(Wait_Connection, "ARE WE AT LEAST WAITING FOR A CONNECTION?\n\r");
 		// RSSI is checked by potential parents
 		packet = tcv_rnp(Wait_Connection, sfd);
 
 	// Get information from received packet
 	state Measuring:
+		ser_outf(Measuring, "RECEIVED A MESSAGE, MEASURING");
 		p1 = (tcv_left(packet))>>1;
 		tr = packet[p1-1];
 		RSSI = (byte) (tr>>8);
@@ -338,8 +309,9 @@ fsm root {
 
 	// Compare the responding nodes and only save the best one
 	state Update:
+		ser_outf(Update, "RECEIVED RESPONSE, #RESPONSES = %d\n\r", count);
 		struct msg* payload = (struct msg*)(packet + 1);
-		if (payload->connect == 1) {
+		if (((int)payload->connect) == 1) {
 			// Checks for multiple responses
 			count ++;
 			if(count > 1){
@@ -365,6 +337,14 @@ fsm root {
 		// Go back to listening for connections until 1.5 seconds passes
 		proceed Wait_Connection;
 
+	state Check_Connections:
+		// If connection end
+		if(count >= 1){
+			proceed Connected;
+		}
+		//else power up
+		proceed Power_Up;
+
 	// Increments power until max and if max sends to shutdown.
 	state Power_Up:
 		if(power == 7){
@@ -381,16 +361,11 @@ fsm root {
 
 	// Generates final connection message
 	state Prep_Message:
-		payload = (struct msg *)umalloc(sizeof(struct msg));
-		payload->nodeID = nodeID;
-       		payload->destID = destID;
-		payload->connect = 1;
-		payload->hopCount = hopCount;
-		payload->powerLVL = (byte) ReadPower;
+		payload = msg_init(destID, nodeID, 1, hopCount, power);
 
 	// Informs parent that it now has a child
 	state Connected:
-		payload = msg_init(destID, nodeID, 1, hopCount, ReadPower);
+		payload = msg_init(destID, nodeID, 1, hopCount, power);
 		packet = tcv_wnp(Connected, sfd, 12);
 		packet[0] = 0;
 
@@ -404,13 +379,9 @@ fsm root {
 
 		tcv_endp(packet);
 		ufree(payload);
-		call parent_send(AlmostEnd);
-		
-	state AlmostEnd:
-		call receive(End);
-		
+		runfsm parent_send;
+
 	// If root finishes the whole program stops. Keep root running.
-	// TODO: Is there a better way for root to continue infinitely? This will end eventually
 	state End:
-		delay(10000000, End);
+		call receive(End);
 }
