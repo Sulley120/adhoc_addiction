@@ -219,16 +219,38 @@ fsm receive {
 		}
 }
 
+fsm Broadcast {
+	address packet;
+	struct msg * payload;
+
+	state Init:
+		// ser_outf(Sending, "INSIDE SENDING NOW, POWER = %x\n\r", power);
+		payload = msg_init(-1, nodeID, 1, 0, power);
+
+	state Send:
+		packet = tcv_wnp(Send, sfd, 12);
+		packet[0] = 0;
+
+		char * p = (char *)(packet+1);
+		*p = payload->nodeID;p++;
+		*p = payload->destID;p++;
+		*p = payload->sourceID;p++;
+		*p = payload->connect;p++;
+		*p = payload->hopCount;p++;
+		*p = payload->powerLVL;
+
+		tcv_endp(packet);
+		ufree(payload);
+		finish;
+}
+
 // Main fsm
 fsm root {
 	struct msg * payload;
-	lword t;
-	lword timeout;
 	address packet;
 	word p1, tr;
 	byte RSSI, LQI;
 	word ReadPower;
-	// TODO: Maybe use delay(time, state) before the ser_inf and that will trigger after 30 secs?
 	int count = 0;
 	char c;
 
@@ -246,7 +268,7 @@ fsm root {
 	/* Initializes the msg packet */
 	state Init_t:
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
-		tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
+		//tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
 		leds(1, 1);
 
 	/* Ask if this node will be the sink */
@@ -270,32 +292,16 @@ fsm root {
 		else {
 			proceed Sending;
 		}
-		//payload->nodeID = nodeID;
 
 	// Sends a request to join the tree if not sink node
 	state Sending:
-		// ser_outf(Sending, "INSIDE SENDING NOW, POWER = %x\n\r", power);
-		payload = msg_init(-1, nodeID, 1, 0, power);
-		//Sets timer
 		// At end of 1.5 seconds, check if the node received a connection
+		runfsm Broadcast;
 		delay(1500, Check_Connections);
-		packet = tcv_wnp(Sending, sfd, 12);
-		packet[0] = 0;
-
-		char * p = (char *)(packet+1);
-		*p = payload->nodeID;p++;
-		*p = payload->destID;p++;
-		*p = payload->sourceID;p++;
-		*p = payload->connect;p++;
-		*p = payload->hopCount;p++;
-		*p = payload->powerLVL;
-
-		tcv_endp(packet);
-		ufree(payload);
 
 	// Wait to receive a response from a node in the tree
 	state Wait_Connection:
-		ser_outf(Wait_Connection, "ARE WE AT LEAST WAITING FOR A CONNECTION?\n\r");
+		ser_outf(NONE, "ARE WE AT LEAST WAITING FOR A CONNECTION?\n\r");
 		// RSSI is checked by potential parents
 		packet = tcv_rnp(Wait_Connection, sfd);
 
