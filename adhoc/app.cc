@@ -24,7 +24,6 @@ word power = 0x0000;
 int sfd;
 
 // Message struct
-// TODO: Do we need a senderID byte for the node that originally sent the message?
 struct msg {
 	byte nodeID;
 	byte destID;
@@ -55,7 +54,7 @@ fsm request_response {
 	struct msg * payload;
 
 	state Init:
-		byte newID = (byte) ((rand() % 254) + 1); // Number 1-254
+		byte newID = (byte) ((rnd() % 254) + 1); // Number 1-254
 		payload = msg_init(newID, nodeID, 1, hopCount, power);
 
 	state Sending:
@@ -73,6 +72,9 @@ fsm request_response {
 
 		tcv_endp(packet);
 		ufree(payload);
+
+	state End:
+		ser_outf(End, "FINISHED SENDING RESPONSE\n\r");	
 		finish;
 }
 
@@ -84,6 +86,7 @@ fsm parent_send {
 
 	/* Initializes the msg packet */
 	state Init_t:
+		ser_outf(Init_t, "WE ARE INSIDE PARENT SEND NOW\n\r");
 		payload = msg_init(destID, nodeID, 0, hopCount, power);
 
 	state Sending:
@@ -104,6 +107,14 @@ fsm parent_send {
 		delay(2000, Init_t); //In two seconds, DO IT AGAIN
 }
 
+/* TODO:
+We are super close with our node connection. Right now our new node broadcasts, the sink receives the broadcast,
+responds with a new nodeID, the new node then assumes that ID and sends the final connection message and starts parent_send.
+
+However our sink node seems to be still sending messages to our new node, causing it to think it's a control message.
+
+Also I'm not sure the sink is receiving the messages from parent_send.
+*/
 /* Receives messages from other nodes and acts accordingly */
 fsm receive {
 	address packet;
@@ -113,6 +124,7 @@ fsm receive {
 	byte RSSI, LQI;
 	int ledOn = 0;
 	byte temp_power;
+	byte msgDest;
 
 	state Receiving:
 		packet = tcv_rnp(Receiving, sfd);
@@ -126,7 +138,10 @@ fsm receive {
 
 	state CheckSource:
 		struct msg* payload = (struct msg*)(packet+1);
+		// TODO: We should save all our msg payload into vars here. This seems to lead to less issues.
+		// TODO: Rename temp_power to something more descriptive
 		temp_power = payload->powerLVL;
+		msgDest = payload->destID;
 		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload->nodeID, payload->destID, temp_power, payload->connect, (int)RSSI);
 		/*checks to see if the message is coming from a child node. */
 		int i;
@@ -201,17 +216,21 @@ fsm receive {
 			tcv_endp(packet);
 			ufree(payload);
 		}
+		proceed Receiving;
 
 	state FromUnknown:
-		//ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE POWER IS: %x    MSG POWER IS: %x\n\r", (byte)power, temp_power);
+		ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE ID IS: %x    MSG DEST ID IS: %x\n\r", nodeID, msgDest);
 		if ((word)temp_power > power) {
 			power = (word)temp_power;
+			tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		}
 		// If the new node's parent is us
-		if (payload->destID == nodeID) {
+		if (msgDest == nodeID) {
 			/* add child to the node tree updating child_array */
+			leds(2,1);
 			child_array[numChildren] = payload->nodeID;
 			numChildren++;
+			proceed Receiving;
 		}
 		// If this is a totally new unknown node, send connection response.
 		else {
@@ -244,70 +263,22 @@ fsm Broadcast {
 		finish;
 }
 
-// Main fsm
-fsm root {
-	struct msg * payload;
+fsm Listen {
 	address packet;
 	word p1, tr;
 	byte RSSI, LQI;
-	word ReadPower;
 	int count = 0;
-	char c;
-
-	/* initializes the root */
-	state Init:
-		phys_cc1100(0, CC1100_BUF_SZ);
-		tcv_plug(0, &plug_null);
-		sfd = tcv_open(NONE, 0, 0);
-		if (sfd < 0) {
-			diag("unable to open TCV session.");
-			syserror(EASSERT, "no session");
-		}
-		tcv_control(sfd, PHYSOPT_ON, NULL);
-
-	/* Initializes the msg packet */
-	state Init_t:
-		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
-		//tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
-		leds(1, 1);
-
-	/* Ask if this node will be the sink */
-	state ASK_ser:
-		ser_outf(ASK_ser, "Would you like to make this the sink node? (y/n)\n\r");
-		delay(30000, Sending);
-	/* Wait for response */
-	state WAIT_ser:
-		// if(!timer){
-		// 	proceed Sending;
-		// }
-		ser_inf(WAIT_ser, "%c", &c);
-		/* Sets the sink nodeID to be 0. */
-		if(c == 'y') {
-			nodeID = 0;
-			parentID = 0;
-			hopCount = 0;
-			// Run the receive fsm and don't try to connect to the tree
-			proceed End;
-		}
-		else {
-			proceed Sending;
-		}
-
-	// Sends a request to join the tree if not sink node
-	state Sending:
-		runfsm Broadcast;
 
 	// Wait to receive a response from a node in the tree
 	state Wait_Connection:
 		// At end of 1.5 seconds, check if the node received a connection
-		delay(1500, Check_Connections);
-		ser_outf(Wait_Connections, "ARE WE AT LEAST WAITING FOR A CONNECTION?\n\r");
+		ser_outf(Wait_Connection, "ARE WE AT LEAST WAITING FOR A CONNECTION?\n\r");
 		// RSSI is checked by potential parents
 		packet = tcv_rnp(Wait_Connection, sfd);
 
 	// Get information from received packet
 	state Measuring:
-		ser_outf(Measuring, "RECEIVED A MESSAGE, MEASURING");
+		ser_outf(Measuring, "RECEIVED A MESSAGE, MEASURING\n\r");
 		p1 = (tcv_left(packet))>>1;
 		tr = packet[p1-1];
 		RSSI = (byte) (tr>>8);
@@ -315,9 +286,10 @@ fsm root {
 
 	// Compare the responding nodes and only save the best one
 	state Update:
-		ser_outf(Update, "RECEIVED RESPONSE, #RESPONSES = %d\n\r", count);
 		struct msg* payload = (struct msg*)(packet + 1);
-		if (((int)payload->connect) == 1) {
+		ser_outf(Update, "RECEIVED MESSAGE: NODEID: %x   DESTID: %x   SOURCEID: %x\n\rCONNECT: %x   HOPCOUNT: %x   POWER: %x\n\r", payload->nodeID, payload->destID, payload->sourceID, payload->connect, payload->hopCount, payload->powerLVL);
+		//ser_outf(Update, "RECEIVED RESPONSE, #RESPONSES = %d\n\rINT PAYLOAD CONNECT: %x\n\r", count, payload->connect);
+		if (payload->connect == (byte)1) {
 			// Checks for multiple responses
 			count ++;
 			if(count > 1){
@@ -342,10 +314,76 @@ fsm root {
 		tcv_endp(packet);
 		// Go back to listening for connections until 1.5 seconds passes
 		proceed Wait_Connection;
+}
+
+// Main fsm
+fsm root {
+	struct msg * payload;
+	address packet;
+	word ReadPower;
+	int count = 0;
+	int pid;
+	char c;
+
+	/* initializes the root */
+	state Init:
+		phys_cc1100(0, CC1100_BUF_SZ);
+		tcv_plug(0, &plug_null);
+		sfd = tcv_open(NONE, 0, 0);
+		if (sfd < 0) {
+			diag("unable to open TCV session.");
+			syserror(EASSERT, "no session");
+		}
+		tcv_control(sfd, PHYSOPT_ON, NULL);
+
+	/* Initializes the msg packet */
+	state Init_t:
+		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
+		//tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
+		leds(1, 1);
+
+	/* Ask if this node will be the sink */
+	state ASK_ser:
+		ser_outf(ASK_ser, "Would you like to make this the sink node? (y/n)\n\r");
+		delay(30000, Sending);
+
+	/* Wait for response */
+	state WAIT_ser:
+		// if(!timer){
+		// 	proceed Sending;
+		// }
+		ser_inf(WAIT_ser, "%c", &c);
+		/* Sets the sink nodeID to be 0. */
+		if(c == 'y') {
+			nodeID = 0;
+			parentID = 0;
+			hopCount = 0;
+			// TODO: Run a new fsm to get uart commands from the user
+			// Run the receive fsm and don't try to connect to the tree
+			proceed End;
+		}
+		else {
+			proceed Sending;
+		}
+
+	// Sends a request to join the tree if not sink node
+	state Sending:
+		//ser_outf(Sending, "SENDING STATE\n\r");
+		call Broadcast(CallListen);
+
+	state CallListen:
+		//ser_outf(Listen, "SETDELAY STATE\n\r");
+		pid = runfsm Listen;
+		
+	state SetDelay:
+		delay(1500, Check_Connections);
+		release;
 
 	state Check_Connections:
+		ser_outf(Check_Connections, "CHECK STATE\n\r");
+		kill(pid);
 		// If connection end
-		if(count >= 1){
+		if(RSSI_C >= (byte)Min_RSSI){
 			proceed Prep_Message;
 		}
 		//else power up
@@ -367,6 +405,7 @@ fsm root {
 
 	// Generates final connection message
 	state Prep_Message:
+		ser_outf(Prep_Message, "ARE WE MAKING IT HERE EVER?\n\r");
 		payload = msg_init(destID, nodeID, 1, hopCount, power);
 
 	// Informs parent that it now has a child
