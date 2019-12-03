@@ -110,7 +110,7 @@ fsm Broadcast {
 	struct msg * payload;
 
 	state Init:
-		// ser_outf(Sending, "INSIDE SENDING NOW, POWER = %x\n\r", power);
+		ser_outf(Init, "INSIDE SENDING NOW, POWER = %x\n\r", power);
 		payload = msg_init(-1, nodeID, 1, 0, power);
 
 	state Send:
@@ -218,9 +218,10 @@ and sends that ID in the destID field */
 fsm request_response {
 	address packet;
 	struct msg * payload;
-	//byte newID = (byte) ((rand() % 254) + 1); // Number 1-254
 	state Send:
-		payload = msg_init(1, nodeID, 1, hopCount, power);
+		word random = rnd();
+		word newID = ((random % 254) + 1); // Number 1-254
+		payload = msg_init((byte)newID, nodeID, 1, hopCount, power);
 		//ser_outf(Sending, "SENDING RESPONSE, MSG is NEWNODE: %x  SOURCENODE: %x  CONNECT: %x\n\rHOPCOUNT: %x POWER: %x\n\r\n\r", payload->destID, payload->sourceID, payload->connect, payload->hopCount, payload->powerLVL);
 		packet = tcv_wnp(Send, sfd, 12);
 		packet[0] = 0;
