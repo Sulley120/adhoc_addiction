@@ -18,8 +18,11 @@ byte destID;
 byte RSSI_C;
 byte LQI_C;
 byte hopCount;
+byte RSSI_G;
 byte child_array[Max_Degree];
+struct msg network_nodes[Max_Degree];
 int numChildren = 0;
+int numNode = 0;
 word power = 0x0000;
 int sfd;
 
@@ -28,9 +31,11 @@ struct msg {
 	byte nodeID;
 	byte destID;
 	byte sourceID;
+	byte parent;
 	byte connect;
 	byte hopCount;
 	byte powerLVL;
+	byte RSSI;
 };
 
 // Function to create and initialize a msg struct
@@ -40,6 +45,7 @@ struct msg * msg_init(byte destID, byte sourceID, byte connect, byte hopCount, w
 	node->nodeID = nodeID;
 	node->destID = destID;
 	node->sourceID = sourceID;
+	node->parent = parentID;
 	node->connect = connect;
 	node->hopCount = hopCount;
 	node->powerLVL = (byte) ReadPower;
@@ -151,7 +157,7 @@ fsm receive {
 		int i;
 		for (i = 0; i < numChildren; i++) {
 			if(payload->nodeID == child_array[i]) {
-			       	fromChild = 1;
+				fromChild = 1;
 			}
 		}
 		/* If the message comes from the parent node. */
@@ -176,6 +182,15 @@ fsm receive {
 		ser_outf(FromChildInit, "FROM CHILD STATE\n\r");
 		// If this is the sink node, print info
 		if (nodeID == 0) {
+			int j;
+			for(j = 0; j < numNode; j++) {
+				if(payload->sourceID == network_nodes[j]->sourceID) {
+					network_nodes[j] = payload;
+					proceed Receiving;
+				}
+			}
+			network_nodes[numNode] = payload;
+			numNode++;
 			ser_outf(Receiving, "NodeID: %x powerLVL: %x\n\r", payload->nodeID, payload->powerLVL);
 			proceed Receiving;
 		}
@@ -312,12 +327,42 @@ fsm Listen {
 			So the node id will always be id of the node who
 			sent the message */
 			parentID = payload->nodeID;
+			payload->parent = parentID;
 			nodeID = payload->destID;
 		}
 
 		tcv_endp(packet);
 		// Go back to listening for connections until 1.5 seconds passes
 		proceed Wait_Connection;
+}
+
+fsm sink_interface {
+
+
+
+	char option;
+	struct msg * node;
+	state ASK_SER:
+		ser_outf(ASK_Ser, "Enter (t) for LED Toggle or (h) for network diagnostic:\n\r");
+	
+	state WAIT_SER:
+		ser_inf(WAIT_SER, "%c", option);
+		
+		if(option == 't') {
+			//TODO: set variable for toggle
+			
+			proceed ASK_SER;
+		}
+
+		if(option =='h') {
+			ser_outf(WAIT_SER, "Number of nodes in the network: %d\n\r", numChildren):
+			for(i = 0; i < numChildren; i++){
+				node = network_nodes[i];	
+				ser_outf(WAIT_SER, "Node ID: %x, Power Level: %x, Hop Count: %x\n\tParent Node:%x, Parent Signal Strength: %x\n\r\n\r",
+						node->nodeID, node->powerLVL, node->hopCount, node->parentID, RSSi_C);
+			}
+			proceed ASK_SER;
+		}
 }
 
 // Main fsm
