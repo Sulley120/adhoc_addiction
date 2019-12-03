@@ -127,7 +127,7 @@ fsm receive {
 	word p1, tr;
 	byte RSSI, LQI;
 	int ledOn = 0;
-	byte payload_power;
+	byte payload_powerLVL;
 	byte payload_nodeID;
 	byte payload_connect;
 	byte payload_sourceID;
@@ -147,22 +147,22 @@ fsm receive {
 	state CheckSource:
 		struct msg* payload = (struct msg*)(packet+1);
 		// TODO: We should save all our msg payload into vars here. This seems to lead to less issues.
-		payload_power = payload->powerLVL;
+		payload_powerLVL = payload->powerLVL;
 		payload_nodeID = payload->nodeID;
 		payload_connect = payload->connect;
 		payload_sourceID = payload->sourceID;
 		payload_hopCount = payload->hopCount;
 		payload_destID = payload->destID;
-		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload->nodeID, payload->destID, payload_power, payload->connect, (int)RSSI);
+		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
 		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < numChildren; i++) {
-			if(payload->nodeID == child_array[i]) {
+			if(payload_nodeID == child_array[i]) {
 			       	fromChild = 1;
 			}
 		}
 		/* If the message comes from the parent node. */
-		if(payload->nodeID == parentID) {
+		if(payload_nodeID == parentID) {
 			proceed FromParent;
 		}
 
@@ -171,7 +171,7 @@ fsm receive {
 			proceed FromChildInit;
 		}
 		/* If the message comes from a new connection */
-		else if (((int)payload->connect) == 1) {
+		else if (((int)payload_connect) == 1) {
 			// If RSSI less than the minimum or the max # of children for this node has been reached
 			if (RSSI < Min_RSSI || numChildren == Max_Degree) {
 				proceed Receiving;
@@ -183,11 +183,11 @@ fsm receive {
 		ser_outf(FromChildInit, "FROM CHILD STATE\n\r");
 		// If this is the sink node, print info
 		if (nodeID == 0) {
-			ser_outf(Receiving, "NodeID: %x powerLVL: %x\n\r", payload->nodeID, payload->powerLVL);
+			ser_outf(Receiving, "NodeID: %x powerLVL: %x\n\r", payload_nodeID, payload_powerLVL);
 			proceed Receiving;
 		}
 		else {
-			payload = msg_init(parentID, payload->sourceID, 0, hopCount, power);
+			payload = msg_init(parentID, payload_sourceID, 0, hopCount, power);
 		}
 
 	state FromChild:
@@ -212,7 +212,7 @@ fsm receive {
 		leds(0, 1);
 		int i;
 		for (i = 0; i < numChildren; i++) {
-			payload = msg_init(child_array[i], payload->sourceID, 0, hopCount, power);
+			payload = msg_init(child_array[i], payload_sourceID, 0, hopCount, power);
 			packet = tcv_wnp(FromParent, sfd, 12);
 			packet[0] = 0;
 
@@ -231,15 +231,15 @@ fsm receive {
 
 	state FromUnknown:
 		ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE ID IS: %x    MSG DEST ID IS: %x\n\r", nodeID, payload_destID);
-		if ((word)payload_power > power) {
-			power = (word)payload_power;
+		if ((word)payload_powerLVL > power) {
+			power = (word)payload_powerLVL;
 			tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		}
 		// If the new node's parent is us
 		if (payload_destID == nodeID) {
 			/* add child to the node tree updating child_array */
 			leds(2,1);
-			child_array[numChildren] = payload->nodeID;
+			child_array[numChildren] = payload_nodeID;
 			numChildren++;
 			proceed Receiving;
 		}
