@@ -127,8 +127,12 @@ fsm receive {
 	word p1, tr;
 	byte RSSI, LQI;
 	int ledOn = 0;
-	byte temp_power;
-	byte msgDest;
+	byte payload_power;
+	byte payload_nodeID;
+	byte payload_connect;
+	byte payload_sourceID;
+	byte payload_hopcount;
+	byte payload_destID;
 
 	state Receiving:
 		packet = tcv_rnp(Receiving, sfd);
@@ -143,10 +147,13 @@ fsm receive {
 	state CheckSource:
 		struct msg* payload = (struct msg*)(packet+1);
 		// TODO: We should save all our msg payload into vars here. This seems to lead to less issues.
-		// TODO: Rename temp_power to something more descriptive
-		temp_power = payload->powerLVL;
-		msgDest = payload->destID;
-		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload->nodeID, payload->destID, temp_power, payload->connect, (int)RSSI);
+		payload_power = payload->powerLVL;
+		payload_nodeID = payload->nodeID;
+		payload_connect = payload->connect;
+		payload_sourceID = payload->sourceID;
+		payload_hopCount = payload->hopCount;
+		payload_destID = payload->destID;
+		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload->nodeID, payload->destID, payload_power, payload->connect, (int)RSSI);
 		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < numChildren; i++) {
@@ -223,13 +230,13 @@ fsm receive {
 		proceed Receiving;
 
 	state FromUnknown:
-		ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE ID IS: %x    MSG DEST ID IS: %x\n\r", nodeID, msgDest);
-		if ((word)temp_power > power) {
-			power = (word)temp_power;
+		ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE ID IS: %x    MSG DEST ID IS: %x\n\r", nodeID, payload_destID);
+		if ((word)payload_power > power) {
+			power = (word)payload_power;
 			tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		}
 		// If the new node's parent is us
-		if (msgDest == nodeID) {
+		if (payload_destID == nodeID) {
 			/* add child to the node tree updating child_array */
 			leds(2,1);
 			child_array[numChildren] = payload->nodeID;
