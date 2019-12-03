@@ -98,12 +98,16 @@ fsm parent_send {
 		char * p = (char *)(packet+1);
 		*p = payload->nodeID;p++;
 		*p = payload->destID;p++;
+		*p = payload->sourceID;p++;
 		*p = payload->connect;p++;
 		*p = payload->hopCount;p++;
 		*p = payload->powerLVL;p++;
 
 		tcv_endp(packet);
 		ufree(payload);
+
+	state End:
+		ser_outf(End, "SENT TO PARENT SUCCESSFULLY\n\r");	
 		delay(2000, Init_t); //In two seconds, DO IT AGAIN
 }
 
