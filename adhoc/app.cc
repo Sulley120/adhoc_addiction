@@ -150,7 +150,7 @@ fsm receive {
 		payload_sourceID = payload->sourceID;
 		payload_hopCount = payload->hopCount;
 		payload_destID = payload->destID;
-		//ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rsourceID: %x   nodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_sourceID, payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
+		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rsourceID: %x   nodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_sourceID, payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
 
 		/*checks to see if the message is coming from a child node. */
 		int i;
@@ -160,7 +160,7 @@ fsm receive {
 			}
 		}
 		/* If the message comes from the parent node. */
-		if(payload_nodeID == parentID) {
+		if((payload_nodeID == parentID) && (payload_destID == nodeID)) {
 			proceed FromParent;
 		}
 
