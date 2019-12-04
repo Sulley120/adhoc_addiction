@@ -79,7 +79,7 @@ fsm request_response {
 		ufree(payload);
 
 	state End:
-		ser_outf(End, "FINISHED SENDING RESPONSE\n\r");	
+		//ser_outf(End, "FINISHED SENDING RESPONSE\n\r");	
 		finish;
 }
 
@@ -91,7 +91,7 @@ fsm parent_send {
 
 	/* Initializes the msg packet */
 	state Init_t:
-		ser_outf(Init_t, "WE ARE INSIDE PARENT SEND NOW\n\r");
+		//ser_outf(Init_t, "WE ARE INSIDE PARENT SEND NOW\n\r");
 		payload = msg_init(destID, nodeID, 0, hopCount, power);
 
 	state Sending:
@@ -112,7 +112,7 @@ fsm parent_send {
 		ufree(payload);
 
 	state End:
-		ser_outf(End, "SENT TO PARENT SUCCESSFULLY\n\r");	
+		//ser_outf(End, "SENT TO PARENT SUCCESSFULLY\n\r");	
 		delay(2000, Init_t); //In two seconds, begin initializing and send another message
 }
 
@@ -150,7 +150,7 @@ fsm receive {
 		payload_sourceID = payload->sourceID;
 		payload_hopCount = payload->hopCount;
 		payload_destID = payload->destID;
-		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rsourceID: %x   nodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_sourceID, payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
+		//ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rsourceID: %x   nodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_sourceID, payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
 
 		/*checks to see if the message is coming from a child node. */
 		int i;
@@ -179,7 +179,7 @@ fsm receive {
 		
 
 	state FromChildInit:
-		ser_outf(FromChildInit, "FROM CHILD STATE\n\r");
+		//ser_outf(FromChildInit, "FROM CHILD STATE\n\r");
 		// If this is the sink node, print info
 		if (nodeID == 0) {
 			int j;
@@ -191,7 +191,7 @@ fsm receive {
 			}
 			network_nodes[numNode] = payload;
 			numNode++;
-			ser_outf(Receiving, "NodeID: %x powerLVL: %x\n\r", payload->nodeID, payload->powerLVL);
+			ser_outf(Receiving, "NodeID: %x powerLVL: %x RSSI: %x\n\r", payload_nodeID, payload_powerLVL, RSSI);
 			proceed Receiving;
 		}
 		else {
@@ -215,7 +215,7 @@ fsm receive {
 		proceed Receiving;
 
 	state FromParent:
-		ser_outf(FromParent, "FROM PARENT STATE\n\r");
+		//ser_outf(FromParent, "FROM PARENT STATE\n\r");
 
 		yLED_toggle++;
 		leds(0, (yLED_toggle%2));
@@ -240,7 +240,7 @@ fsm receive {
 		proceed Receiving;
 
 	state FromUnknown:
-		ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE ID IS: %x    MSG DEST ID IS: %x\n\r", nodeID, payload_destID);
+		//ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE ID IS: %x    MSG DEST ID IS: %x\n\r", nodeID, payload_destID);
 		if ((word)payload_powerLVL > power) {
 			power = (word)payload_powerLVL;
 			tcv_control (sfd, PHYSOPT_SETPOWER, &power);
@@ -293,13 +293,13 @@ fsm Listen {
 	// Wait to receive a response from a node in the tree
 	state Wait_Connection:
 		// At end of 1.5 seconds, check if the node received a connection
-		ser_outf(Wait_Connection, "ARE WE AT LEAST WAITING FOR A CONNECTION?\n\r");
+		//ser_outf(Wait_Connection, "ARE WE AT LEAST WAITING FOR A CONNECTION?\n\r");
 		// RSSI is checked by potential parents
 		packet = tcv_rnp(Wait_Connection, sfd);
 
 	// Get information from received packet
 	state Measuring:
-		ser_outf(Measuring, "RECEIVED A MESSAGE, MEASURING\n\r");
+		//ser_outf(Measuring, "RECEIVED A MESSAGE, MEASURING\n\r");
 		p1 = (tcv_left(packet))>>1;
 		tr = packet[p1-1];
 		RSSI = (byte) (tr>>8);
@@ -308,7 +308,7 @@ fsm Listen {
 	// Compare the responding nodes and only save the best one
 	state Update:
 		struct msg* payload = (struct msg*)(packet + 1);
-		ser_outf(Update, "RECEIVED MESSAGE: NODEID: %x   DESTID: %x   SOURCEID: %x\n\rCONNECT: %x   HOPCOUNT: %x   POWER: %x\n\r", payload->nodeID, payload->destID, payload->sourceID, payload->connect, payload->hopCount, payload->powerLVL);
+		//ser_outf(Update, "RECEIVED MESSAGE: NODEID: %x   DESTID: %x   SOURCEID: %x\n\rCONNECT: %x   HOPCOUNT: %x   POWER: %x\n\r", payload->nodeID, payload->destID, payload->sourceID, payload->connect, payload->hopCount, payload->powerLVL);
 		//ser_outf(Update, "RECEIVED RESPONSE, #RESPONSES = %d\n\rINT PAYLOAD CONNECT: %x\n\r", count, payload->connect);
 		if (payload->connect == (byte)1) {
 			// Checks for multiple responses
@@ -448,7 +448,7 @@ fsm root {
 		release;
 
 	state Check_Connections:
-		ser_outf(Check_Connections, "CHECK STATE\n\r");
+		//ser_outf(Check_Connections, "CHECK STATE\n\r");
 		kill(pid);
 		// If connection end
 		if(RSSI_C >= (byte)Min_RSSI){
@@ -473,7 +473,7 @@ fsm root {
 
 	// Generates final connection message
 	state Prep_Message:
-		ser_outf(Prep_Message, "ARE WE MAKING IT HERE EVER?\n\r");
+		//ser_outf(Prep_Message, "ARE WE MAKING IT HERE EVER?\n\r");
 		payload = msg_init(destID, nodeID, 1, hopCount, power);
 
 	// Informs parent that it now has a child
