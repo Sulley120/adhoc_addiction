@@ -23,7 +23,7 @@ byte child_array[Max_Degree];
 struct msg * network_nodes[Max_Degree];
 int numChildren = 0;
 int numNode = 0;
-int yLED_toggle = 0;
+int yLED_toggle = 0; // For toggling yellow LED through sink
 int sfd;
 word power = 0x0000;
 
@@ -62,7 +62,8 @@ fsm request_response {
 		payload = msg_init(newID, nodeID, 1, hopCount, power);
 
 	state Sending:
-		ser_outf(Sending, "SENDING RESPONSE, MSG is NEWNODE: %x  SOURCENODE: %x  CONNECT: %x\n\rHOPCOUNT: %x POWER: %x\n\r\n\r", payload->destID, payload->sourceID, payload->connect, payload->hopCount, payload->powerLVL);
+		// Debug message to print out every variable
+		//ser_outf(Sending, "SENDING RESPONSE, MSG is NEWNODE: %x  SOURCENODE: %x  CONNECT: %x\n\rHOPCOUNT: %x POWER: %x\n\r\n\r", payload->destID, payload->sourceID, payload->connect, payload->hopCount, payload->powerLVL);
 		packet = tcv_wnp(Sending, sfd, 12);
 		packet[0] = 0;
 
@@ -112,17 +113,9 @@ fsm parent_send {
 
 	state End:
 		ser_outf(End, "SENT TO PARENT SUCCESSFULLY\n\r");	
-		delay(2000, Init_t); //In two seconds, DO IT AGAIN
+		delay(2000, Init_t); //In two seconds, begin initializing and send another message
 }
 
-/* TODO:
-We are super close with our node connection. Right now our new node broadcasts, the sink receives the broadcast,
-responds with a new nodeID, the new node then assumes that ID and sends the final connection message and starts parent_send.
-
-However our sink node seems to be still sending messages to our new node, causing it to think it's a control message.
-
-Also I'm not sure the sink is receiving the messages from parent_send.
-*/
 /* Receives messages from other nodes and acts accordingly */
 fsm receive {
 	address packet;
@@ -130,7 +123,8 @@ fsm receive {
 	struct msg * payload;
 	word p1, tr;
 	byte RSSI, LQI;
-	int ledOn = 0;
+
+	// Initalize payload vars locally within fsm as it is easier to work with them
 	byte payload_powerLVL;
 	byte payload_nodeID;
 	byte payload_connect;
@@ -221,8 +215,10 @@ fsm receive {
 
 	state FromParent:
 		ser_outf(FromParent, "FROM PARENT STATE\n\r");
+
 		yLED_toggle++;
 		leds(0, (yLED_toggle%2));
+
 		int i;
 		for (i = 0; i < numChildren; i++) {
 			payload = msg_init(child_array[i], payload_sourceID, 0, hopCount, power);
@@ -340,6 +336,7 @@ fsm Listen {
 		proceed Wait_Connection;
 }
 
+/* FSM to allow console commands from the sink */
 fsm sink_interface {
 	char option;
 	struct msg * node;
@@ -352,6 +349,7 @@ fsm sink_interface {
 	state WAIT_SER:
 		ser_inf(WAIT_SER, "%c", &option);
 
+		/* Will send a message to each of the sink's children to toggle yellow LED and rebroadcast the message */
 		if(option == 't') {
 			int i;
 			for (i = 0; i < numChildren; i++) {
@@ -372,6 +370,7 @@ fsm sink_interface {
 			}
 			proceed ASK_SER;
 		}
+		/* Otherwise we print out the info for each child node via LOOP_STATE */
 		if(option =='h') {
 			ser_outf(WAIT_SER, "Number of nodes in the network: %d\n\r", numNode);
 			proceed LOOP_STATE;
@@ -407,7 +406,6 @@ fsm root {
 
 	/* Initializes the msg packet */
 	state Init_t:
-
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		//tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
 		leds(1, 1);
@@ -419,10 +417,8 @@ fsm root {
 
 	/* Wait for response */
 	state WAIT_ser:
-		// if(!timer){
-		// 	proceed Sending;
-		// }
 		ser_inf(WAIT_ser, "%c", &c);
+
 		/* Sets the sink nodeID to be 0. */
 		if(c == 'y') {
 			nodeID = 0;
@@ -440,11 +436,10 @@ fsm root {
 
 	// Sends a request to join the tree if not sink node
 	state Sending:
-		//ser_outf(Sending, "SENDING STATE\n\r");
 		call Broadcast(CallListen);
 
+	// Begin listening for nodes
 	state CallListen:
-		//ser_outf(Listen, "SETDELAY STATE\n\r");
 		pid = runfsm Listen;
 		
 	state SetDelay:
