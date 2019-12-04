@@ -131,7 +131,7 @@ fsm receive {
 	byte payload_nodeID;
 	byte payload_connect;
 	byte payload_sourceID;
-	byte payload_hopcount;
+	byte payload_hopCount;
 	byte payload_destID;
 
 	state Receiving:
@@ -153,7 +153,7 @@ fsm receive {
 		payload_sourceID = payload->sourceID;
 		payload_hopCount = payload->hopCount;
 		payload_destID = payload->destID;
-		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
+		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rsourceID: %x   nodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_sourceID, payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
 		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < numChildren; i++) {
