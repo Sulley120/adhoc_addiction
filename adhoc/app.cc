@@ -169,13 +169,14 @@ fsm receive {
 			proceed FromChildInit;
 		}
 		/* If the message comes from a new connection */
-		else if (((int)payload_connect) == 1) {
+		else if ((((int)payload_connect) == 1) && (payload_nodeID != parentID)) {
 			// If RSSI less than the minimum or the max # of children for this node has been reached
 			if (RSSI < Min_RSSI || numChildren == Max_Degree) {
 				proceed Receiving;
 			}
 			proceed FromUnknown;
 		}
+		
 
 	state FromChildInit:
 		ser_outf(FromChildInit, "FROM CHILD STATE\n\r");
