@@ -238,7 +238,7 @@ fsm receive {
 		// If the new node's parent is us
 		if (payload_destID == nodeID) {
 			/* add child to the node tree updating child_array */
-			leds(2,1);
+			//leds(2,1);
 			child_array[numChildren] = payload_nodeID;
 			numChildren++;
 			proceed Receiving;
@@ -304,8 +304,8 @@ fsm Listen {
 			// Checks for multiple responses
 			count ++;
 			if(count > 1){
-				leds_all(0);
-				leds(2, 1);
+				//leds_all(0);
+				//leds(2, 1);
 				// If the newly received response is further away than a previous response
 				if((payload->hopCount + 1) > hopCount){
 					proceed Wait_Connection;
@@ -369,6 +369,8 @@ fsm root {
 			nodeID = 0;
 			parentID = 0;
 			hopCount = 0;
+			leds_all(0);
+			leds(0,1);
 			// TODO: Run a new fsm to get uart commands from the user
 			// Run the receive fsm and don't try to connect to the tree
 			proceed End;
@@ -434,6 +436,8 @@ fsm root {
 
 		tcv_endp(packet);
 		ufree(payload);
+		leds_all(0);
+		leds(2,1);
 		runfsm parent_send;
 
 	// If root finishes the whole program stops. Keep root running.
