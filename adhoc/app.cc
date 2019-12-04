@@ -1,3 +1,10 @@
+/*
+ * Group members: Dylan Campbell, Bruce Szostak, Tyrell Wagner, Sulley Larocque
+ * Project: Low Power Collection Tree Protocol
+ * Due Date: Dec 4th 2019 1pm
+ *
+ */
+
 #include "sysio.h"
 #include "serf.h"
 #include "ser.h"
@@ -9,7 +16,7 @@
 // Define constants
 #define CC1100_BUF_SZ   60
 #define Min_RSSI        100
-#define Max_Degree      8
+#define Max_Degree      2
 
 // Initialize globals
 byte nodeID = -1;
@@ -58,6 +65,7 @@ fsm request_response {
 	struct msg * payload;
 
 	state Init:
+		// Generates random ID
 		byte newID = (byte) ((rnd() % 254) + 1); // Number 1-254
 		payload = msg_init(newID, nodeID, 1, hopCount, power);
 
@@ -177,7 +185,7 @@ fsm receive {
 			proceed FromUnknown;
 		}
 		
-
+	// Generates child message to be forwarded
 	state FromChildInit:
 		//ser_outf(FromChildInit, "FROM CHILD STATE\n\r");
 		// If this is the sink node, print info
@@ -197,7 +205,7 @@ fsm receive {
 		else {
 			payload = msg_init(parentID, payload_sourceID, 0, hopCount, power);
 		}
-
+	// If a message comes from a child, it will forward to the next node.
 	state FromChild:
 		packet = tcv_wnp(FromChild, sfd, 12);
 		packet[0] = 0;
@@ -213,7 +221,7 @@ fsm receive {
 		tcv_endp(packet);
 		ufree(payload);
 		proceed Receiving;
-
+	// If a message comes from a parent, it will forward it to the next child.
 	state FromParent:
 		//ser_outf(FromParent, "FROM PARENT STATE\n\r");
 
@@ -221,6 +229,7 @@ fsm receive {
 		leds(0, (yLED_toggle%2));
 
 		int i;
+		//Sends message to all children.
 		for (i = 0; i < numChildren; i++) {
 			payload = msg_init(child_array[i], payload_sourceID, 0, hopCount, power);
 			packet = tcv_wnp(FromParent, sfd, 12);
@@ -238,7 +247,7 @@ fsm receive {
 			ufree(payload);
 		}
 		proceed Receiving;
-
+	// If message comes from an unknown source.
 	state FromUnknown:
 		//ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE ID IS: %x    MSG DEST ID IS: %x\n\r", nodeID, payload_destID);
 		if ((word)payload_powerLVL > power) {
@@ -248,7 +257,6 @@ fsm receive {
 		// If the new node's parent is us
 		if (payload_destID == nodeID) {
 			/* add child to the node tree updating child_array */
-			//leds(2,1);
 			child_array[numChildren] = payload_nodeID;
 			numChildren++;
 			proceed Receiving;
@@ -258,7 +266,7 @@ fsm receive {
 			call request_response(Receiving);
 		}
 }
-
+//Sends out updates every two seconds.
 fsm Broadcast {
 	address packet;
 	struct msg * payload;
@@ -266,7 +274,7 @@ fsm Broadcast {
 	state Init:
 		// ser_outf(Sending, "INSIDE SENDING NOW, POWER = %x\n\r", power);
 		payload = msg_init(-1, nodeID, 1, 0, power);
-
+	// Sends to the parent.
 	state Send:
 		packet = tcv_wnp(Send, sfd, 12);
 		packet[0] = 0;
@@ -283,7 +291,7 @@ fsm Broadcast {
 		ufree(payload);
 		finish;
 }
-
+// listens for responses to initial connections.
 fsm Listen {
 	address packet;
 	word p1, tr;
