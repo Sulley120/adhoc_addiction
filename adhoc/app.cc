@@ -135,7 +135,7 @@ fsm receive {
 	byte payload_nodeID;
 	byte payload_connect;
 	byte payload_sourceID;
-	byte payload_hopcount;
+	byte payload_hopCount;
 	byte payload_destID;
 
 	state Receiving:
@@ -157,7 +157,7 @@ fsm receive {
 		payload_sourceID = payload->sourceID;
 		payload_hopCount = payload->hopCount;
 		payload_destID = payload->destID;
-		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
+		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rsourceID: %x   nodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_sourceID, payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
 		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < numChildren; i++) {
@@ -251,7 +251,7 @@ fsm receive {
 		// If the new node's parent is us
 		if (payload_destID == nodeID) {
 			/* add child to the node tree updating child_array */
-			leds(2,1);
+			//leds(2,1);
 			child_array[numChildren] = payload_nodeID;
 			numChildren++;
 			proceed Receiving;
@@ -317,8 +317,8 @@ fsm Listen {
 			// Checks for multiple responses
 			count ++;
 			if(count > 1){
-				leds_all(0);
-				leds(2, 1);
+				//leds_all(0);
+				//leds(2, 1);
 				// If the newly received response is further away than a previous response
 				if((payload->hopCount + 1) > hopCount){
 					proceed Wait_Connection;
@@ -411,7 +411,8 @@ fsm root {
 			nodeID = 0;
 			parentID = 0;
 			hopCount = 0;
-			runfsm sink_interface;
+			leds_all(0);
+			leds(0,1);
 			// TODO: Run a new fsm to get uart commands from the user
 			// Run the receive fsm and don't try to connect to the tree
 			proceed End;
@@ -477,6 +478,8 @@ fsm root {
 
 		tcv_endp(packet);
 		ufree(payload);
+		leds_all(0);
+		leds(2,1);
 		runfsm parent_send;
 
 	// If root finishes the whole program stops. Keep root running.

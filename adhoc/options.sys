@@ -1,3 +1,7 @@
 // Options for our node network:x
 #undef RADIO_USE_LEDS
 #define DIAG_MESSAGES 2
+
+#define RANDOM_NUMBER_GENERATOR 1
+
+
