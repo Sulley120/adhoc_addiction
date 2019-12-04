@@ -30,7 +30,6 @@ struct msg {
 	byte nodeID;
 	byte destID;
 	byte sourceID;
-	byte parent;
 	byte connect;
 	byte hopCount;
 	byte powerLVL;
@@ -43,7 +42,6 @@ struct msg * msg_init(byte destID, byte sourceID, byte connect, byte hopCount, w
 	node->nodeID = nodeID;
 	node->destID = destID;
 	node->sourceID = sourceID;
-	node->parent = parentID;
 	node->connect = connect;
 	node->hopCount = hopCount;
 	node->powerLVL = (byte) ReadPower;
@@ -332,7 +330,6 @@ fsm Listen {
 			So the node id will always be id of the node who
 			sent the message */
 			parentID = payload->nodeID;
-			payload->parent = parentID;
 			nodeID = payload->destID;
 		}
 
@@ -365,7 +362,7 @@ fsm sink_interface {
 			int i;
 			for(i = 0; i < numNode; i++){
 				node = network_nodes[i];	
-				ser_outf(WAIT_SER, "Node ID: %x, Power Level: %x, Hop Count: %x\n\tParent Node:%x, Parent Signal Strength: n/a\n\r\n\r", node->nodeID, node->powerLVL, node->hopCount, node->parent);
+				ser_outf(WAIT_SER, "Node ID: %x, Power Level: %x, Hop Count: %x\n\tParent Node:, Parent Signal Strength: n/a\n\r\n\r", node->nodeID, node->powerLVL, node->hopCount);
 			}
 			proceed ASK_SER;
 		}
