@@ -155,7 +155,7 @@ fsm receive {
 		payload_sourceID = payload->sourceID;
 		payload_hopCount = payload->hopCount;
 		payload_destID = payload->destID;
-		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rsourceID: %x   nodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_sourceID, payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
+		//ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rsourceID: %x   nodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_sourceID, payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
 		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < numChildren; i++) {
@@ -348,10 +348,10 @@ fsm sink_interface {
 		ser_outf(ASK_SER, "Enter (t) for LED Toggle or (h) for network diagnostic:\n\r");
 	
 	state WAIT_SER:
-		ser_inf(WAIT_SER, "%c", option);
-		release;
-		
+		ser_inf(WAIT_SER, "%c", &option);
+
 		if(option == 't') {
+
 			//TODO: set variable for toggle
 			
 			proceed ASK_SER;
@@ -359,13 +359,16 @@ fsm sink_interface {
 
 		if(option =='h') {
 			ser_outf(WAIT_SER, "Number of nodes in the network: %d\n\r", numNode);
-			int i;
-			for(i = 0; i < numNode; i++){
-				node = network_nodes[i];	
-				ser_outf(WAIT_SER, "Node ID: %x, Power Level: %x, Hop Count: %x\n\tParent Node:, Parent Signal Strength: n/a\n\r\n\r", node->nodeID, node->powerLVL, node->hopCount);
-			}
-			proceed ASK_SER;
+			proceed LOOP_STATE;
+
 		}
+	state LOOP_STATE:
+		int i;
+		for(i = 0; i < numNode; i++){
+			node = network_nodes[i];	
+			ser_outf(LOOP_STATE, "Node ID: %x, Power Level: %x, Hop Count: %x\n\rParent Node:, Parent Signal Strength: n/a\n\r", node->nodeID, node->powerLVL, node->hopCount);
+		}
+		proceed ASK_SER;
 }
 
 // Main fsmmak
@@ -390,15 +393,6 @@ fsm root {
 
 	/* Initializes the msg packet */
 	state Init_t:
-		
-		byte asd = (byte) ((rnd() % 254) + 1);
-		byte asdf = (byte) ((rnd() % 254) + 1);
-		byte asdfg = (byte) ((rnd() % 254) + 1);
-		byte asdfgh = (byte) ((rnd() % 254) + 1);
-		byte asdfghj = (byte) ((rnd() % 254) + 1);
-		byte asdfghjk = (byte) ((rnd() % 254) + 1);
-
-		ser_outf(Init_t,"1: %x 2: %x 3: %x 4: %x 5: %x 6: %x \r\n\r\n\r\n", asd, asdf,asdfg,asdfgh,asdfghj,asdfghjk);
 
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		//tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
@@ -423,7 +417,7 @@ fsm root {
 			leds_all(0);
 			leds(0,1);
 			runfsm receive;
-			call sink_interface(end);
+			call sink_interface(End);
 			// TODO: Run a new fsm to get uart commands from the user
 			// Run the receive fsm and don't try to connect to the tree
 		}
