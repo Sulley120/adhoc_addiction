@@ -19,7 +19,7 @@ byte RSSI_C;
 byte LQI_C;
 byte hopCount;
 byte child_array[Max_Degree];
-struct msg network_nodes[Max_Degree];
+struct msg * network_nodes[Max_Degree];
 int numChildren = 0;
 int numNode = 0;
 word power = 0x0000;
@@ -135,7 +135,7 @@ fsm receive {
 	byte payload_nodeID;
 	byte payload_connect;
 	byte payload_sourceID;
-	byte payload_hopcount;
+	byte payload_hopCount;
 	byte payload_destID;
 
 	state Receiving:
@@ -157,7 +157,7 @@ fsm receive {
 		payload_sourceID = payload->sourceID;
 		payload_hopCount = payload->hopCount;
 		payload_destID = payload->destID;
-		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
+		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rsourceID: %x   nodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_sourceID, payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
 		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < numChildren; i++) {
@@ -251,7 +251,7 @@ fsm receive {
 		// If the new node's parent is us
 		if (payload_destID == nodeID) {
 			/* add child to the node tree updating child_array */
-			leds(2,1);
+			//leds(2,1);
 			child_array[numChildren] = payload_nodeID;
 			numChildren++;
 			proceed Receiving;
@@ -318,7 +318,7 @@ fsm Listen {
 			count ++;
 			if(count > 1){
 				leds_all(0);
-				leds(2, 1);
+				//leds(2, 1);
 				// If the newly received response is further away than a previous response
 				if((payload->hopCount + 1) > hopCount){
 					proceed Wait_Connection;
@@ -348,10 +348,11 @@ fsm sink_interface {
 	char option;
 	struct msg * node;
 	state ASK_SER:
-		ser_outf(ASK_Ser, "Enter (t) for LED Toggle or (h) for network diagnostic:\n\r");
+		ser_outf(ASK_SER, "Enter (t) for LED Toggle or (h) for network diagnostic:\n\r");
 	
 	state WAIT_SER:
 		ser_inf(WAIT_SER, "%c", option);
+		release;
 		
 		if(option == 't') {
 			//TODO: set variable for toggle
@@ -360,7 +361,8 @@ fsm sink_interface {
 		}
 
 		if(option =='h') {
-			ser_outf(WAIT_SER, "Number of nodes in the network: %d\n\r", numNode):
+			ser_outf(WAIT_SER, "Number of nodes in the network: %d\n\r", numNode);
+			int i;
 			for(i = 0; i < numNode; i++){
 				node = network_nodes[i];	
 				ser_outf(WAIT_SER, "Node ID: %x, Power Level: %x, Hop Count: %x\n\tParent Node:%x, Parent Signal Strength: n/a\n\r\n\r", node->nodeID, node->powerLVL, node->hopCount, node->parent);
@@ -369,7 +371,7 @@ fsm sink_interface {
 		}
 }
 
-// Main fsm
+// Main fsmmak
 fsm root {
 	struct msg * payload;
 	address packet;
@@ -391,6 +393,16 @@ fsm root {
 
 	/* Initializes the msg packet */
 	state Init_t:
+		
+		byte asd = (byte) ((rnd() % 254) + 1);
+		byte asdf = (byte) ((rnd() % 254) + 1);
+		byte asdfg = (byte) ((rnd() % 254) + 1);
+		byte asdfgh = (byte) ((rnd() % 254) + 1);
+		byte asdfghj = (byte) ((rnd() % 254) + 1);
+		byte asdfghjk = (byte) ((rnd() % 254) + 1);
+
+		ser_outf(Init_t,"1: %x 2: %x 3: %x 4: %x 5: %x 6: %x \r\n\r\n\r\n", asd, asdf,asdfg,asdfgh,asdfghj,asdfghjk);
+
 		tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		//tcv_control (sfd, PHYSOPT_GETPOWER, &ReadPower);		
 		leds(1, 1);
@@ -411,7 +423,9 @@ fsm root {
 			nodeID = 0;
 			parentID = 0;
 			hopCount = 0;
-			runfsm sink_interface;
+			leds_all(0);
+			leds(0,1);
+			//runfsm sink_interface;
 			// TODO: Run a new fsm to get uart commands from the user
 			// Run the receive fsm and don't try to connect to the tree
 			proceed End;
@@ -477,6 +491,8 @@ fsm root {
 
 		tcv_endp(packet);
 		ufree(payload);
+		leds_all(0);
+		leds(2,1);
 		runfsm parent_send;
 
 	// If root finishes the whole program stops. Keep root running.
