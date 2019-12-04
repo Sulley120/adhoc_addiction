@@ -19,11 +19,13 @@ byte RSSI_C;
 byte LQI_C;
 byte hopCount;
 byte child_array[Max_Degree];
+
 struct msg * network_nodes[Max_Degree];
 int numChildren = 0;
 int numNode = 0;
-word power = 0x0000;
+int yLED_toggle = 0;
 int sfd;
+word power = 0x0000;
 
 // Message struct
 struct msg {
@@ -148,7 +150,6 @@ fsm receive {
 
 	state CheckSource:
 		struct msg* payload = (struct msg*)(packet+1);
-		// TODO: We should save all our msg payload into vars here. This seems to lead to less issues.
 		payload_powerLVL = payload->powerLVL;
 		payload_nodeID = payload->nodeID;
 		payload_connect = payload->connect;
@@ -156,6 +157,7 @@ fsm receive {
 		payload_hopCount = payload->hopCount;
 		payload_destID = payload->destID;
 		//ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rsourceID: %x   nodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_sourceID, payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
+
 		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < numChildren; i++) {
@@ -219,8 +221,8 @@ fsm receive {
 
 	state FromParent:
 		ser_outf(FromParent, "FROM PARENT STATE\n\r");
-		//ledOn++;
-		leds(0, 1);
+		yLED_toggle++;
+		leds(0, (yLED_toggle%2));
 		int i;
 		for (i = 0; i < numChildren; i++) {
 			payload = msg_init(child_array[i], payload_sourceID, 0, hopCount, power);
@@ -339,11 +341,11 @@ fsm Listen {
 }
 
 fsm sink_interface {
-
-
-
 	char option;
 	struct msg * node;
+	struct msg * payload;
+	address packet;
+
 	state ASK_SER:
 		ser_outf(ASK_SER, "Enter (t) for LED Toggle or (h) for network diagnostic:\n\r");
 	
@@ -351,16 +353,28 @@ fsm sink_interface {
 		ser_inf(WAIT_SER, "%c", &option);
 
 		if(option == 't') {
+			int i;
+			for (i = 0; i < numChildren; i++) {
+				payload = msg_init(child_array[i], 0, 0, hopCount, power);
+				packet = tcv_wnp(WAIT_SER, sfd, 12);
+				packet[0] = 0;
 
-			//TODO: set variable for toggle
-			
+				char * p = (char *)(packet+1);
+				*p = payload->nodeID;p++;
+				*p = payload->destID;p++;
+				*p = payload->sourceID;p++;
+				*p = payload->connect;p++;
+				*p = payload->hopCount;p++;
+				*p = payload->powerLVL;
+
+				tcv_endp(packet);
+				ufree(payload);
+			}
 			proceed ASK_SER;
 		}
-
 		if(option =='h') {
 			ser_outf(WAIT_SER, "Number of nodes in the network: %d\n\r", numNode);
 			proceed LOOP_STATE;
-
 		}
 	state LOOP_STATE:
 		int i;
@@ -418,7 +432,6 @@ fsm root {
 			leds(0,1);
 			runfsm receive;
 			call sink_interface(End);
-			// TODO: Run a new fsm to get uart commands from the user
 			// Run the receive fsm and don't try to connect to the tree
 		}
 		else {
