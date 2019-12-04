@@ -18,7 +18,6 @@ byte destID;
 byte RSSI_C;
 byte LQI_C;
 byte hopCount;
-byte RSSI_G;
 byte child_array[Max_Degree];
 struct msg network_nodes[Max_Degree];
 int numChildren = 0;
@@ -35,7 +34,6 @@ struct msg {
 	byte connect;
 	byte hopCount;
 	byte powerLVL;
-	byte RSSI;
 };
 
 // Function to create and initialize a msg struct
@@ -133,8 +131,12 @@ fsm receive {
 	word p1, tr;
 	byte RSSI, LQI;
 	int ledOn = 0;
-	byte temp_power;
-	byte msgDest;
+	byte payload_powerLVL;
+	byte payload_nodeID;
+	byte payload_connect;
+	byte payload_sourceID;
+	byte payload_hopcount;
+	byte payload_destID;
 
 	state Receiving:
 		packet = tcv_rnp(Receiving, sfd);
@@ -149,10 +151,13 @@ fsm receive {
 	state CheckSource:
 		struct msg* payload = (struct msg*)(packet+1);
 		// TODO: We should save all our msg payload into vars here. This seems to lead to less issues.
-		// TODO: Rename temp_power to something more descriptive
-		temp_power = payload->powerLVL;
-		msgDest = payload->destID;
-		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload->nodeID, payload->destID, temp_power, payload->connect, (int)RSSI);
+		payload_powerLVL = payload->powerLVL;
+		payload_nodeID = payload->nodeID;
+		payload_connect = payload->connect;
+		payload_sourceID = payload->sourceID;
+		payload_hopCount = payload->hopCount;
+		payload_destID = payload->destID;
+		ser_outf(CheckSource, "CHECKSOURCE STATE, PAYLOAD:\n\rnodeID: %x   DestID: %x   POWER: %x   CONNECT: %x   RSSI: %d\n\r", payload_nodeID, payload_destID, payload_powerLVL, payload_connect, (int)RSSI);
 		/*checks to see if the message is coming from a child node. */
 		int i;
 		for (i = 0; i < numChildren; i++) {
@@ -161,7 +166,7 @@ fsm receive {
 			}
 		}
 		/* If the message comes from the parent node. */
-		if(payload->nodeID == parentID) {
+		if(payload_nodeID == parentID) {
 			proceed FromParent;
 		}
 
@@ -170,7 +175,7 @@ fsm receive {
 			proceed FromChildInit;
 		}
 		/* If the message comes from a new connection */
-		else if (((int)payload->connect) == 1) {
+		else if (((int)payload_connect) == 1) {
 			// If RSSI less than the minimum or the max # of children for this node has been reached
 			if (RSSI < Min_RSSI || numChildren == Max_Degree) {
 				proceed Receiving;
@@ -195,7 +200,7 @@ fsm receive {
 			proceed Receiving;
 		}
 		else {
-			payload = msg_init(parentID, payload->sourceID, 0, hopCount, power);
+			payload = msg_init(parentID, payload_sourceID, 0, hopCount, power);
 		}
 
 	state FromChild:
@@ -220,7 +225,7 @@ fsm receive {
 		leds(0, 1);
 		int i;
 		for (i = 0; i < numChildren; i++) {
-			payload = msg_init(child_array[i], payload->sourceID, 0, hopCount, power);
+			payload = msg_init(child_array[i], payload_sourceID, 0, hopCount, power);
 			packet = tcv_wnp(FromParent, sfd, 12);
 			packet[0] = 0;
 
@@ -238,16 +243,16 @@ fsm receive {
 		proceed Receiving;
 
 	state FromUnknown:
-		ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE ID IS: %x    MSG DEST ID IS: %x\n\r", nodeID, msgDest);
-		if ((word)temp_power > power) {
-			power = (word)temp_power;
+		ser_outf(FromUnknown, "FROM UNKNOWN STATE, NODE ID IS: %x    MSG DEST ID IS: %x\n\r", nodeID, payload_destID);
+		if ((word)payload_powerLVL > power) {
+			power = (word)payload_powerLVL;
 			tcv_control (sfd, PHYSOPT_SETPOWER, &power);
 		}
 		// If the new node's parent is us
-		if (msgDest == nodeID) {
+		if (payload_destID == nodeID) {
 			/* add child to the node tree updating child_array */
 			leds(2,1);
-			child_array[numChildren] = payload->nodeID;
+			child_array[numChildren] = payload_nodeID;
 			numChildren++;
 			proceed Receiving;
 		}
@@ -355,11 +360,10 @@ fsm sink_interface {
 		}
 
 		if(option =='h') {
-			ser_outf(WAIT_SER, "Number of nodes in the network: %d\n\r", numChildren):
-			for(i = 0; i < numChildren; i++){
+			ser_outf(WAIT_SER, "Number of nodes in the network: %d\n\r", numNode):
+			for(i = 0; i < numNode; i++){
 				node = network_nodes[i];	
-				ser_outf(WAIT_SER, "Node ID: %x, Power Level: %x, Hop Count: %x\n\tParent Node:%x, Parent Signal Strength: %x\n\r\n\r",
-						node->nodeID, node->powerLVL, node->hopCount, node->parentID, RSSi_C);
+				ser_outf(WAIT_SER, "Node ID: %x, Power Level: %x, Hop Count: %x\n\tParent Node:%x, Parent Signal Strength: n/a\n\r\n\r", node->nodeID, node->powerLVL, node->hopCount, node->parent);
 			}
 			proceed ASK_SER;
 		}
@@ -407,6 +411,7 @@ fsm root {
 			nodeID = 0;
 			parentID = 0;
 			hopCount = 0;
+			runfsm sink_interface;
 			// TODO: Run a new fsm to get uart commands from the user
 			// Run the receive fsm and don't try to connect to the tree
 			proceed End;
