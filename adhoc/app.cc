@@ -413,9 +413,10 @@ fsm root {
 			hopCount = 0;
 			leds_all(0);
 			leds(0,1);
+			runfsm receive;
+			call sink_interface(end);
 			// TODO: Run a new fsm to get uart commands from the user
 			// Run the receive fsm and don't try to connect to the tree
-			proceed End;
 		}
 		else {
 			proceed Sending;
