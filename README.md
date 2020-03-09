@@ -58,7 +58,7 @@ If receive info from parent (control command to turn LEDs yellow) send to childr
 ## Sink Node
 receive info from children
 
-send info through UART to user - Sulley -> in progress.
+send info through UART to user
 
 if receive info through UART for control command
 
